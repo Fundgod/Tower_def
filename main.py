@@ -129,14 +129,13 @@ class Game:
             sleep(interval)
             self.spawn_mob(road_num)
 
-    def update(self):
-        self.mobs.update()
-
-    def render(self, screen):
+    def update_and_render(self):
         self.map.render(screen)
+        self.mobs.update()
         self.mobs.draw(screen)
         self.plants.draw(screen)
         self.towers.draw(screen)
+
 
 
 if __name__ == '__main__':
@@ -154,7 +153,6 @@ if __name__ == '__main__':
             if event.type == pygame.QUIT:
                 running = False
         screen.fill('black')
-        game.update()
-        game.render(screen)
+        game.update_and_render()
         pygame.display.flip()
     pygame.quit()
