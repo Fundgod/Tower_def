@@ -94,7 +94,7 @@ class Mob(pygame.sprite.Sprite):
         else:
             self.kill()
 
-class DefenseTower(pygame.sprite.Sprite):
+class AttackTower(pygame.sprite.Sprite):
     def __init__(self, group=None):
         super().__init__(group)
         self.long_range = 1
@@ -102,8 +102,8 @@ class DefenseTower(pygame.sprite.Sprite):
         self.health = 1000
         # self.image = pygame.transform.scale(load_image())
 
-    def tower_attack(self):
-        TowerAttack()
+    def attack(self):
+        Bullet()
 
     def update(self):
         if self.health > 0:
@@ -113,7 +113,7 @@ class DefenseTower(pygame.sprite.Sprite):
             self.kill()
 
 
-class TowerAttack(pygame.sprite.Sprite):
+class Bullet(pygame.sprite.Sprite):
     pass
 
 class Game:
