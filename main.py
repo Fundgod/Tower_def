@@ -69,7 +69,7 @@ class Mob(pygame.sprite.Sprite):
         self.coords[1] -= self.height / 2
         self.steps = [0, 0]
         self.rect = pygame.Rect(*self.way[self.pos], 10, 10)
-        self.image = pygame.transform.scale(load_image('sprites\\lol.png', -1), (60, 60))
+        self.image = pygame.transform.scale(load_image(os.path.join('sprites', 'mobs', 'default_mob.png'), -1), (60, 60))
 
     def update(self):
         if self.health > 0:
@@ -131,10 +131,10 @@ class Game:
 
     def load_plants(self):
         plants_data = []
-        plant_image = pygame.transform.scale(load_image('sprites/plant.png', -1), (50, 50))
+        plant_image = load_image(os.path.join('sprites', 'plant.png'), -1)
         with open(os.path.join(self.map.dir, 'plants.csv'), 'r') as f:
             for line in f.readlines():
-                plants_data.append(tuple(map(lambda coord: float(coord) - 25, line.rstrip().split(';'))))
+                plants_data.append(tuple(map(lambda coord: float(coord) - 130, line.rstrip().split(';'))))
                 plant_sprite = pygame.sprite.Sprite(self.plants)
                 plant_sprite.rect = pygame.Rect(*plants_data[-1], 40, 40)
                 plant_sprite.image = plant_image
