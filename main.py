@@ -1,6 +1,7 @@
 import pygame
 import random
-import sys, os
+import sys
+import os
 from threading import Thread
 from time import sleep
 
@@ -133,14 +134,51 @@ class AttackTower(pygame.sprite.Sprite):
 class Bullet(pygame.sprite.Sprite):
     pass
 
+class Button(pygame.sprite.Sprite):
+    def __init__(self, coords, filename, group=None):
+        super().__init__(group)
+        self.rect = pygame.Rect(*coords)
+        self.image = load_image(os.path.join('sprites', 'buttons', filename), -1)
+
+
 class Game:
-    def __init__(self):
+    def __init__(self, screen):
+        self.screen = screen
         self.level = 1
         self.map = Map(self.level)
         self.mobs = pygame.sprite.Group()
         self.plants = pygame.sprite.Group()
         self.plants_data = self.load_plants()
         self.towers = pygame.sprite.Group()
+        self.buttons = pygame.sprite.Group()
+        self.pause_button = Button((1800, 30, 80, 80), 'pause.png', self.buttons)
+        self.on_pause = False
+
+    def begin(self):
+        # Инициализация фоновой картинки и кнопок
+        background = load_image(os.path.join('sprites', 'background_image.png'))
+        buttons = pygame.sprite.Group()
+        single_player_button = Button((800, 500, 350, 90), 'start_single_game.png', buttons)
+        online_game_button = Button((800, 650, 350, 90), 'start_online_game.png', buttons)
+        exit_button = Button((800, 800, 350, 90), 'exit.png', buttons)
+        self.screen.blit(background, (0, 0))
+        buttons.draw(self.screen)
+        # Ожидание юзер инпута
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    click = pygame.Rect(*event.pos, 1, 1)
+                    if click.colliderect(single_player_button):
+                        self.start()
+                        return
+                    elif click.colliderect(online_game_button):
+                        print('It must start online mode')
+                    elif click.colliderect(exit_button):
+                        self.quit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_END:
+                        self.quit()
+            pygame.display.flip()
 
     def start(self):
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
@@ -167,16 +205,101 @@ class Game:
 
     def spawn_mobs(self):
         for interval, road_num in ((1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0)):
-            sleep(interval)
+            little_intervals_count = interval / 0.1
+            little_intervals_counter = 0
+            while little_intervals_counter != little_intervals_count:
+                sleep(0.1)
+                if not self.on_pause:
+                    little_intervals_counter += 1
             self.spawn_mob(road_num)
 
-    def update_and_render(self):
-        self.map.render(screen)
-        self.mobs.update()
-        self.mobs.draw(screen)
-        self.plants.draw(screen)
-        self.towers.draw(screen)
+    def on_click(self, pos):
+        click = pygame.Rect(*pos, 1, 1)
+        if click.colliderect(self.pause_button):
+            self.pause()
 
+    def on_tap(self, key):
+        if key == pygame.K_TAB:
+            self.pause()
+        elif key == pygame.K_END:
+            self.quit()
+
+    def pause(self):
+        self.on_pause = True
+        # Инициализация меню паузы
+        menu = pygame.sprite.Group()
+        menu_table = pygame.sprite.Sprite(menu)
+        menu_table.rect = pygame.Rect(660, 190, 600, 700)
+        menu_table.image = load_image(os.path.join('sprites', 'menu.png'), -1)
+        continue_button = Button((770, 300, 350, 90), 'continue.png', menu)
+        music_slider = Button((800, 483, 20, 40), 'slider.png', menu)
+        sounds_slider = Button((800, 619, 20, 40), 'slider.png', menu)
+        exit_button = Button((770, 680, 350, 90), 'exit.png', menu)
+        menu.draw(self.screen)
+        changing_music_volume = False
+        changing_sounds_volume = False
+        volume_changing_bias = 0
+        # Обработка взаимодействия пользователя с меню паузы
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    click = pygame.Rect(*event.pos, 1, 1)
+                    if click.colliderect(continue_button):
+                        self.on_pause = False
+                        return
+                    elif click.colliderect(music_slider):
+                        changing_music_volume = True
+                        volume_changing_bias = event.pos[0] - music_slider.rect.x
+                        print(volume_changing_bias)
+                    elif click.colliderect(sounds_slider):
+                        changing_sounds_volume = True
+                        volume_changing_bias = event.pos[0] - sounds_slider.rect.x
+                        print(volume_changing_bias)
+                    elif click.colliderect(exit_button):
+                        self.quit()
+                elif event.type == pygame.MOUSEMOTION:
+                    if changing_music_volume:
+                        cursor_x_coord = event.pos[0] - volume_changing_bias
+                        if 800 > cursor_x_coord:
+                            next_pos = 800
+                        elif 1115 < cursor_x_coord:
+                            next_pos = 1115
+                        else:
+                            next_pos = cursor_x_coord
+                        music_slider.rect.x = next_pos
+                        menu.draw(self.screen)
+                    elif changing_sounds_volume:
+                        cursor_x_coord = event.pos[0] - volume_changing_bias
+                        if 800 > cursor_x_coord:
+                            next_pos = 800
+                        elif 1115 < cursor_x_coord:
+                            next_pos = 1115
+                        else:
+                            next_pos = cursor_x_coord
+                        sounds_slider.rect.x = next_pos
+                        menu.draw(self.screen)
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    changing_music_volume = False
+                    changing_sounds_volume = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_TAB:
+                        self.on_pause = False
+                        return
+                    elif event.key == pygame.K_END:
+                        self.quit()
+                pygame.display.flip()
+
+    def update_and_render(self):
+        self.map.render(self.screen)
+        self.mobs.update()
+        self.mobs.draw(self.screen)
+        self.plants.draw(self.screen)
+        self.towers.draw(self.screen)
+        self.buttons.draw(self.screen)
+
+    def quit(self):
+        pygame.quit()
+        sys.exit(0)
 
 
 if __name__ == '__main__':
@@ -185,17 +308,17 @@ if __name__ == '__main__':
     screen = pygame.display.set_mode(SIZE)
     GOLEM_ANIMATION = load_animation('golem.png', 1, 11, 55, 50)
     MASK_ANIMATION = load_animation('mask.png', 1, 6, 125, 128)
-    game = Game()
-    game.start()
+    game = Game(screen)
+    game.begin()
     fps = 60
     time = pygame.time.Clock()
-    running = True
-    while running:
+    while True:
         time.tick(fps)
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                game.on_click(event.pos)
+            if event.type == pygame.KEYDOWN:
+                game.on_tap(event.key)
         screen.fill('black')
         game.update_and_render()
         pygame.display.flip()
-    pygame.quit()
