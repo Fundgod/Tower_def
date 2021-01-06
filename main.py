@@ -20,6 +20,18 @@ def load_image(name, colorkey=None):
     return image
 
 
+def load_animation(image_file, rows, columns, width, height):
+    image = load_image(os.path.join('sprites', 'mobs', image_file), -1)
+    frames = []
+    for i in range(rows):
+        for j in range(columns):
+            frame_location = (width * j, height * i)
+            frame = image.subsurface(pygame.Rect(frame_location, (width, height)))
+            frame.set_colorkey(frame.get_at((0, 0)))
+            frames.append(frame)
+    return frames
+
+
 class Map:
     def __init__(self, number):
         self.dir = f'map{number}'
@@ -56,7 +68,7 @@ class Map:
 
 
 class Mob(pygame.sprite.Sprite):
-    def __init__(self, way, image_data, width=60, height=60, velocity=60, group=None):
+    def __init__(self, way, width, height, animation, animation_speed, velocity=60, group=None):
         super().__init__(group)
         self.way = way
         self.width = width
@@ -69,25 +81,13 @@ class Mob(pygame.sprite.Sprite):
         self.coords[1] -= self.height / 2
         self.steps = [0, 0]
         self.rect = pygame.Rect(*self.way[self.pos], 10, 10)
-        self.animation = self.load_animation(*image_data)
+        self.animation = animation
         self.animation_index = 0.
-        self.animation_speed = 0.125
-
-    def load_animation(self, image_file, width, height, rows, columns):
-        image = load_image(os.path.join('sprites', 'mobs', image_file), -1)
-        frames = []
-        for i in range(rows):
-            for j in range(columns):
-                frame_location = (width * j, height * i)
-                print(width * j, height * i)
-                frame = image.subsurface(pygame.Rect(frame_location, (width, height)))
-                frame.set_colorkey(frame.get_at((0, 0)))
-                frames.append(frame)
-        return frames
+        self.animation_speed = animation_speed
 
     def update(self):
         if self.health > 0:
-            if self.animation_index.is_integer():
+            if round(self.animation_index, 1).is_integer():
                 self.image = self.animation[int(self.animation_index)]
             self.animation_index = (self.animation_index + self.animation_speed) % len(self.animation)
             try:
@@ -160,7 +160,10 @@ class Game:
         return plants_data
 
     def spawn_mob(self, road_num):
-        Mob(self.map.get_way(road_num), ('golem.png', 57, 50, 1, 11), group=self.mobs)
+        if random.random() >= 0.5:
+            Mob(self.map.get_way(road_num), 55, 50, GOLEM_ANIMATION, 0.25, group=self.mobs)
+        else:
+            Mob(self.map.get_way(road_num), 125, 128, MASK_ANIMATION, 0.1, velocity=20, group=self.mobs)
 
     def spawn_mobs(self):
         for interval, road_num in ((1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0)):
@@ -180,9 +183,11 @@ if __name__ == '__main__':
     pygame.init()
     SIZE = WIDTH, HEIGHT = 1920, 1080
     screen = pygame.display.set_mode(SIZE)
+    GOLEM_ANIMATION = load_animation('golem.png', 1, 11, 55, 50)
+    MASK_ANIMATION = load_animation('mask.png', 1, 6, 125, 128)
     game = Game()
     game.start()
-    fps = 120
+    fps = 60
     time = pygame.time.Clock()
     running = True
     while running:

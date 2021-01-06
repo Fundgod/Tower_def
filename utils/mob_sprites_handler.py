@@ -10,7 +10,7 @@ start = None
 fragments = []
 for i in range(x):
     for j in range(y):
-        if sum(pixels[i, j]) < 700:
+        if sum(pixels[i, j]) < 600:
             if start is None:
                 start = i
             break
@@ -24,12 +24,11 @@ for i in range(x):
 if start is not None:
     fragments.append(im.crop((start, 0, i, y)))
 
-del fragments[3]
 
 #for c, i in enumerate(fragments):
 #    i.save(f'{c + 1}.png')
 
-max_width = max([fragment.size[0] for fragment in fragments]) + 2
+max_width = max([fragment.size[0] for fragment in fragments])
 final_result = Image.new('RGB', (max_width * len(fragments), y), color=(255, 255, 255))
 for i in range(len(fragments)):
     width = fragments[i].size[0]
