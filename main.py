@@ -1,5 +1,6 @@
 import pygame
 import random
+from math import sqrt
 import sys, os
 from threading import Thread
 from time import sleep
@@ -19,6 +20,7 @@ def load_image(name, colorkey=None):
         image = image.convert_alpha()
     return image
 
+mobslist = []
 
 class Map:
     def __init__(self, number):
@@ -70,6 +72,7 @@ class Mob(pygame.sprite.Sprite):
         self.steps = [0, 0]
         self.rect = pygame.Rect(*self.way[self.pos], 10, 10)
         self.image = pygame.transform.scale(load_image(os.path.join('sprites', 'mobs', 'default_mob.png'), -1), (60, 60))
+        mobslist.append(self)
 
     def update(self):
         if self.health > 0:
@@ -94,27 +97,67 @@ class Mob(pygame.sprite.Sprite):
         else:
             self.kill()
 
+
 class AttackTower(pygame.sprite.Sprite):
-    def __init__(self, group=None):
+    def __init__(self, type_of_tower='Long', group=None):
         super().__init__(group)
-        self.long_range = 1
-        self.tower_level = 1
+        self.type = type_of_tower
         self.health = 1000
+        self.tower_coords = (900, 100)
+        self.rect = pygame.Rect(*self.tower_coords, 5, 5)
         # self.image = pygame.transform.scale(load_image())
 
-    def attack(self):
-        Bullet()
-
     def update(self):
+        Bullet(self.tower_coords, 'Long')
         if self.health > 0:
-            pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30, 5))
-            pygame.draw.rect(screen, 'green',(int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
+            pygame.draw.rect(screen, 'red', (int(self.tower_coords[0] + 15), int(self.tower_coords[1]) - 10, 30, 5))
+            pygame.draw.rect(screen, 'green',(int(self.tower_coords[0] + 15), int(self.tower_coords[1]) - 10, 30 * self.health // 100, 5))
         else:
             self.kill()
 
 
 class Bullet(pygame.sprite.Sprite):
-    pass
+    def __init__(self, coords, type_of_tower, group=None):
+        super().__init__(group)
+        self.coords = coords
+        self.type = type_of_tower
+        self.rect = pygame.Rect(*self.coords, 5, 5)
+        if self.type == 'Long':
+            self.bullet_range = 400
+        elif self.type == 'Short':
+            self.bullet_range = 300
+        else:
+            self.bullet_range = 500
+        # self.image = pygame.transform.scale(load_image())
+
+    def solution(self):
+        for mob in mobslist:
+            print(mob.coords[0])
+            if int(sqrt((self.coords[0] - mob.coords[0]) + (self.coords[1] - mob.coords[1]))) < self.bullet_range:
+                return True
+            else:
+                return False
+
+    def update(self):
+        if self.solution():
+            if self.rect.x == -10:
+                self.rect.x, self.rect.y = self.coords
+            self.rect.x, self.rect.y = self.rect.x + 5, self.rect.x + 5
+        self.rect.x, self.rect.y = -10, 0
+
+
+class MainTower(pygame.sprite.Sprite):
+    def __init__(self, health, group=None):
+        super().__init__(group)
+        self.health = health
+        self.coords = (135, 780)
+        self.rect = pygame.Rect(*self.coords, 10, 10)
+        # self.image = pygame.transform.scale(load_image())
+
+    def update(self):
+        pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30, 5))
+        pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
+
 
 class Game:
     def __init__(self):
@@ -156,7 +199,6 @@ class Game:
         self.mobs.draw(screen)
         self.plants.draw(screen)
         self.towers.draw(screen)
-
 
 
 if __name__ == '__main__':
