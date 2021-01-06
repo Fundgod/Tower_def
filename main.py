@@ -56,12 +56,12 @@ class Map:
 
 
 class Mob(pygame.sprite.Sprite):
-    def __init__(self, way, width=60, height=60, velocity=1, group=None):
+    def __init__(self, way, image_data, width=60, height=60, velocity=60, group=None):
         super().__init__(group)
         self.way = way
         self.width = width
         self.height = height
-        self.velocity = velocity
+        self.velocity = velocity / fps
         self.pos = 0
         self.health = 100
         self.coords = list(self.way[self.pos])
@@ -69,10 +69,27 @@ class Mob(pygame.sprite.Sprite):
         self.coords[1] -= self.height / 2
         self.steps = [0, 0]
         self.rect = pygame.Rect(*self.way[self.pos], 10, 10)
-        self.image = pygame.transform.scale(load_image(os.path.join('sprites', 'mobs', 'default_mob.png'), -1), (60, 60))
+        self.animation = self.load_animation(*image_data)
+        self.animation_index = 0.
+        self.animation_speed = 0.125
+
+    def load_animation(self, image_file, width, height, rows, columns):
+        image = load_image(os.path.join('sprites', 'mobs', image_file), -1)
+        frames = []
+        for i in range(rows):
+            for j in range(columns):
+                frame_location = (width * j, height * i)
+                print(width * j, height * i)
+                frame = image.subsurface(pygame.Rect(frame_location, (width, height)))
+                frame.set_colorkey(frame.get_at((0, 0)))
+                frames.append(frame)
+        return frames
 
     def update(self):
         if self.health > 0:
+            if self.animation_index.is_integer():
+                self.image = self.animation[int(self.animation_index)]
+            self.animation_index = (self.animation_index + self.animation_speed) % len(self.animation)
             try:
                 if self.steps[0] >= self.steps[1]:
                     start_point = self.way[self.pos]
@@ -143,7 +160,7 @@ class Game:
         return plants_data
 
     def spawn_mob(self, road_num):
-        Mob(self.map.get_way(road_num), group=self.mobs)
+        Mob(self.map.get_way(road_num), ('golem.png', 57, 50, 1, 11), group=self.mobs)
 
     def spawn_mobs(self):
         for interval, road_num in ((1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0)):
@@ -165,7 +182,7 @@ if __name__ == '__main__':
     screen = pygame.display.set_mode(SIZE)
     game = Game()
     game.start()
-    fps = 60
+    fps = 120
     time = pygame.time.Clock()
     running = True
     while running:
