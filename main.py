@@ -187,6 +187,7 @@ class Game:
 
     def spawn_mob(self, road_num):
         Mob(self.map.get_way(road_num), group=self.mobs)
+        AttackTower(group=self.towers)
 
     def spawn_mobs(self):
         for interval, road_num in ((1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0)):
@@ -196,6 +197,7 @@ class Game:
     def update_and_render(self):
         self.map.render(screen)
         self.mobs.update()
+        self.towers.update()
         self.mobs.draw(screen)
         self.plants.draw(screen)
         self.towers.draw(screen)
