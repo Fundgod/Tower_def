@@ -20,13 +20,13 @@ MOBS = {
     ),
     2: (
         (1, 0, STONE_GOLEM),
-        (2, 0, CRYSTAL_GOLEM),
+        (2, 1, CRYSTAL_GOLEM),
         (3, 0, HORNY_DOG),
-        (1, 0, BOAR_WARRIOR),
+        (1, 1, BOAR_WARRIOR),
         (2, 0, MASK),
-        (3, 0, SKILLET),
+        (3, 1, SKILLET),
         (1, 0, HORNY_DOG),
-        (2, 0, SKILLET),
+        (2, 1, SKILLET),
         (3, 0, BOAR_WARRIOR)
     )
 }

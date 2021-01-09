@@ -106,7 +106,7 @@ class Mob(pygame.sprite.Sprite):
         self.health = 100
         self.coords = list(self.way[self.pos])
         self.steps = [0, 0]
-        self.rect = pygame.Rect(self.coords[0] - self.width / 2, self.coords[1] - self.height / 2, 10, 10)
+        self.rect = pygame.Rect(self.coords[0] - self.width / 2, self.coords[1] - self.height / 2, self.width, self.height)
 
     def update(self):
         if self.health > 0:
@@ -169,6 +169,13 @@ class Mob(pygame.sprite.Sprite):
         self.update = partial(new_update, self)
 
 
+class Button(pygame.sprite.Sprite):
+    def __init__(self, coords, filename, group=None):
+        super().__init__(group)
+        self.rect = pygame.Rect(*coords)
+        self.image = load_image(os.path.join('sprites', 'buttons', filename), -1)
+
+
 class AttackTower(pygame.sprite.Sprite):
     def __init__(self, group=None):
         super().__init__(group)
@@ -190,13 +197,6 @@ class AttackTower(pygame.sprite.Sprite):
 
 class Bullet(pygame.sprite.Sprite):
     pass
-
-
-class Button(pygame.sprite.Sprite):
-    def __init__(self, coords, filename, group=None):
-        super().__init__(group)
-        self.rect = pygame.Rect(*coords)
-        self.image = load_image(os.path.join('sprites', 'buttons', filename), -1)
 
 
 class Game:
@@ -252,10 +252,10 @@ class Game:
 
     def load_plants(self):
         plants_data = []
-        plant_image = load_image(os.path.join('sprites', 'plant.png'), -1)
+        plant_image = pygame.transform.scale(load_image('sprites/plant.png', -1), (50, 50))
         with open(os.path.join(self.map.dir, 'plants.csv'), 'r') as f:
             for line in f.readlines():
-                plants_data.append(tuple(map(lambda coord: float(coord) - 130, line.rstrip().split(';'))))
+                plants_data.append(tuple(map(lambda coord: float(coord) - 25, line.rstrip().split(';'))))
                 plant_sprite = pygame.sprite.Sprite(self.plants)
                 plant_sprite.rect = pygame.Rect(*plants_data[-1], 40, 40)
                 plant_sprite.image = plant_image
@@ -374,7 +374,8 @@ if __name__ == '__main__':
     game.begin()
     fps = 60
     time = pygame.time.Clock()
-    while True:
+    running = True
+    while running:
         time.tick(fps)
         for event in pygame.event.get():
             if event.type == pygame.MOUSEBUTTONDOWN:
