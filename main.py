@@ -2,8 +2,11 @@ import pygame
 import random
 import sys
 import os
+import json
 from threading import Thread
+from functools import partial
 from time import sleep
+from constants import *
 
 
 def load_image(name, colorkey=None):
@@ -21,16 +24,31 @@ def load_image(name, colorkey=None):
     return image
 
 
-def load_animation(image_file, rows, columns, width, height):
-    image = load_image(os.path.join('sprites', 'mobs', image_file), -1)
+def load_animation(path_to_image, width, height):
+    image = load_image(os.path.join(path_to_image))
+    x, y = image.get_size()
     frames = []
-    for i in range(rows):
-        for j in range(columns):
+    for i in range(y // height):
+        for j in range(x // width):
             frame_location = (width * j, height * i)
             frame = image.subsurface(pygame.Rect(frame_location, (width, height)))
-            frame.set_colorkey(frame.get_at((0, 0)))
             frames.append(frame)
     return frames
+
+
+def load_mob_animations():
+    animations = {}
+    root = 'mobs'
+    for mob in os.listdir(root):
+        mob_dir = os.path.join(root, mob)
+        animations[mob] = {}
+        with open(os.path.join(mob_dir, 'info.json'), 'r', encoding='utf-8') as info_file:
+            info = json.load(info_file)
+        for animation in ('move', 'attack', 'death'):
+            animations[mob][animation] = load_animation(os.path.join(mob_dir, 'sprites', animation + '.png'),
+                                                        info[animation]['width'],
+                                                        info[animation]['height'])
+    return animations
 
 
 class Map:
@@ -69,48 +87,87 @@ class Map:
 
 
 class Mob(pygame.sprite.Sprite):
-    def __init__(self, way, width, height, animation, animation_speed, velocity=60, group=None):
+    def __init__(self, type, way, group):
         super().__init__(group)
         self.way = way
-        self.width = width
-        self.height = height
-        self.velocity = velocity / fps
+        self.load_info(type)
+
+    def load_info(self, type):
+        with open(os.path.join('mobs', type, 'info.json'), 'r', encoding='utf-8') as info_file:
+            self.info = json.load(info_file)
+        self.width, self.height = self.info['move']['width'], self.info['move']['height']
+        self.velocity = self.info['velocity'] / fps
+        self.animations = MOB_ANIMATIONS[type]
+        self.animation = self.animations['move']
+        self.animation_index = 0.
+        self.animation_speed = self.info['move']['animation_speed']
+        self.health_line_bias = tuple(self.info['health_line_bias'].values())
         self.pos = 0
         self.health = 100
         self.coords = list(self.way[self.pos])
-        self.coords[0] -= self.width / 2
-        self.coords[1] -= self.height / 2
         self.steps = [0, 0]
-        self.rect = pygame.Rect(*self.way[self.pos], 10, 10)
-        self.animation = animation
-        self.animation_index = 0.
-        self.animation_speed = animation_speed
+        self.rect = pygame.Rect(self.coords[0] - self.width / 2, self.coords[1] - self.height / 2, 10, 10)
 
     def update(self):
         if self.health > 0:
             if round(self.animation_index, 1).is_integer():
                 self.image = self.animation[int(self.animation_index)]
             self.animation_index = (self.animation_index + self.animation_speed) % len(self.animation)
+            # Отрисовка полоски здоровья
+            pygame.draw.rect(screen, 'red',
+                             (
+                                 int(self.coords[0] - self.width / 2 + self.health_line_bias[0]),
+                                 int(self.coords[1]) - self.height / 2 - self.health_line_bias[1],
+                                 30,
+                                 5
+                             ))
+            pygame.draw.rect(screen, 'green',
+                             (
+                                 int(self.coords[0] - self.width / 2 + self.health_line_bias[0]),
+                                 int(self.coords[1]) - self.height / 2 - self.health_line_bias[1],
+                                 30 * self.health // 100,
+                                 5
+                             ))
             try:
                 if self.steps[0] >= self.steps[1]:
-                    start_point = self.way[self.pos]
+                    start_point = tuple(map(lambda coord: coord + random.randint(-3, 3), self.way[self.pos]))
                     self.pos += 1
-                    end_point = self.way[self.pos]
+                    end_point = tuple(map(lambda coord: coord + random.randint(-3, 3), self.way[self.pos]))
                     d_x, d_y = end_point[0] - start_point[0], end_point[1] - start_point[1]
                     self.steps = [0, (d_x ** 2 + d_y ** 2) ** .5 // self.velocity]
                     self.x_velocity, self.y_velocity = d_x, d_y
                 self.steps[0] += 1
                 self.coords[0] += self.x_velocity / self.steps[1]
                 self.coords[1] += self.y_velocity / self.steps[1]
-                self.rect.x, self.rect.y = self.coords
-
-                # Отрисовка полоски здоровья
-                pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30, 5))
-                pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
+                self.rect.x, self.rect.y = self.coords[0] - self.width / 2, self.coords[1] - self.height / 2
             except IndexError:
-                self.kill()
+                self.attack()
         else:
             self.kill()
+
+    def attack(self):
+        attack_animation = self.animations['attack']
+        if self.animation != attack_animation:
+            self.animation = attack_animation
+            self.animation_speed = self.info['attack']['animation_speed']
+            self.animation_index = 0 - self.animation_speed
+            self.width, self.height = self.info['attack']['width'], self.info['attack']['height']
+
+    def kill(self):
+        def new_update(self):
+            try:
+                if round(self.animation_index, 1).is_integer():
+                    self.image = self.animation[int(self.animation_index)]
+                self.animation_index += self.animation_speed
+            except IndexError:
+                super().kill()
+
+        self.animation = self.animations['death']
+        self.animation_index = 0.
+        self.animation_speed = self.info['death']['animation_speed']
+        self.width, self.height = self.info['death']['width'], self.info['death']['height']
+        self.update = partial(new_update, self)
+
 
 class AttackTower(pygame.sprite.Sprite):
     def __init__(self, group=None):
@@ -134,6 +191,7 @@ class AttackTower(pygame.sprite.Sprite):
 class Bullet(pygame.sprite.Sprite):
     pass
 
+
 class Button(pygame.sprite.Sprite):
     def __init__(self, coords, filename, group=None):
         super().__init__(group)
@@ -146,13 +204,21 @@ class Game:
         self.screen = screen
         self.level = 1
         self.map = Map(self.level)
-        self.mobs = pygame.sprite.Group()
+        self.mobs = {
+            MASK: pygame.sprite.Group(),
+            SKILLET: pygame.sprite.Group(),
+            STONE_GOLEM: pygame.sprite.Group(),
+            BOAR_WARRIOR: pygame.sprite.Group(),
+            HORNY_DOG: pygame.sprite.Group(),
+            CRYSTAL_GOLEM: pygame.sprite.Group()
+        }
         self.plants = pygame.sprite.Group()
         self.plants_data = self.load_plants()
         self.towers = pygame.sprite.Group()
         self.buttons = pygame.sprite.Group()
         self.pause_button = Button((1800, 30, 80, 80), 'pause.png', self.buttons)
         self.on_pause = False
+        self.mob_query = []
 
     def begin(self):
         # Инициализация фоновой картинки и кнопок
@@ -197,21 +263,15 @@ class Game:
         plants_data = dict(plants_data)
         return plants_data
 
-    def spawn_mob(self, road_num):
-        if random.random() >= 0.5:
-            Mob(self.map.get_way(road_num), 55, 50, GOLEM_ANIMATION, 0.25, group=self.mobs)
-        else:
-            Mob(self.map.get_way(road_num), 125, 128, MASK_ANIMATION, 0.1, velocity=20, group=self.mobs)
-
     def spawn_mobs(self):
-        for interval, road_num in ((1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0), (1, 0), (2, 0), (3, 0)):
+        for interval, road_num, mob_type in MOBS[self.level]:
             little_intervals_count = interval / 0.1
             little_intervals_counter = 0
             while little_intervals_counter != little_intervals_count:
                 sleep(0.1)
                 if not self.on_pause:
                     little_intervals_counter += 1
-            self.spawn_mob(road_num)
+            self.mob_query.append((mob_type, road_num))
 
     def on_click(self, pos):
         click = pygame.Rect(*pos, 1, 1)
@@ -290,9 +350,13 @@ class Game:
                 pygame.display.flip()
 
     def update_and_render(self):
+        if self.mob_query:
+            mob_type, road_num = self.mob_query.pop(-1)
+            Mob(mob_type, self.map.get_way(road_num), self.mobs[mob_type])
         self.map.render(self.screen)
-        self.mobs.update()
-        self.mobs.draw(self.screen)
+        for mob_type in (HORNY_DOG, BOAR_WARRIOR, SKILLET, CRYSTAL_GOLEM, STONE_GOLEM, MASK):
+            self.mobs[mob_type].update()
+            self.mobs[mob_type].draw(self.screen)
         self.plants.draw(self.screen)
         self.towers.draw(self.screen)
         self.buttons.draw(self.screen)
@@ -304,10 +368,8 @@ class Game:
 
 if __name__ == '__main__':
     pygame.init()
-    SIZE = WIDTH, HEIGHT = 1920, 1080
     screen = pygame.display.set_mode(SIZE)
-    GOLEM_ANIMATION = load_animation('golem.png', 1, 11, 55, 50)
-    MASK_ANIMATION = load_animation('mask.png', 1, 6, 125, 128)
+    MOB_ANIMATIONS = load_mob_animations()
     game = Game(screen)
     game.begin()
     fps = 60

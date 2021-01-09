@@ -1,0 +1,22 @@
+{
+  "move": {
+    "width": 66,
+    "height": 43,
+    "animation_speed": 0.2
+  },
+  "attack": {
+    "width": 70,
+    "height": 66,
+    "animation_speed": 0.15
+  },
+  "death": {
+    "width": 69,
+    "height": 43,
+    "animation_speed": 0.2
+  },
+  "health_line_bias": {
+    "x": 15,
+    "y": 10
+  },
+  "velocity": 40
+}
