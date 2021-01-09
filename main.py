@@ -252,10 +252,10 @@ class Game:
 
     def load_plants(self):
         plants_data = []
-        plant_image = pygame.transform.scale(load_image('sprites/plant.png', -1), (50, 50))
+        plant_image = load_image('sprites/plant.png', -1)
         with open(os.path.join(self.map.dir, 'plants.csv'), 'r') as f:
             for line in f.readlines():
-                plants_data.append(tuple(map(lambda coord: float(coord) - 25, line.rstrip().split(';'))))
+                plants_data.append(tuple(map(lambda coord: float(coord) - 125, line.rstrip().split(';'))))
                 plant_sprite = pygame.sprite.Sprite(self.plants)
                 plant_sprite.rect = pygame.Rect(*plants_data[-1], 40, 40)
                 plant_sprite.image = plant_image
