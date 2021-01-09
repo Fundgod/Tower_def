@@ -12,7 +12,7 @@ def conv_way(filename):
     way = []
     for i in x_axis:
         for j in y_axis:
-            if sum(pixels[i, j]) < 700:
+            if pixels[i, j] != (255, 255, 255, 255):
                 way.append((i, j))
 
     for i in range(len(way) - 1, 0, -1):
@@ -23,4 +23,4 @@ def conv_way(filename):
         f.write('\n'.join([f'{i};{j}' for i, j in way]))
 
 
-conv_way('map1/ways/way2')
+conv_way('way6')

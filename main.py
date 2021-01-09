@@ -118,7 +118,7 @@ class Bullet(pygame.sprite.Sprite):
 
 class Game:
     def __init__(self):
-        self.level = 1
+        self.level = 2
         self.map = Map(self.level)
         self.mobs = pygame.sprite.Group()
         self.plants = pygame.sprite.Group()
