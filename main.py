@@ -1,6 +1,6 @@
 import pygame
 import random
-from math import sqrt
+import math
 import sys, os
 from threading import Thread
 from time import sleep
@@ -20,7 +20,9 @@ def load_image(name, colorkey=None):
         image = image.convert_alpha()
     return image
 
+
 mobslist = []
+
 
 def load_animation(image_file, rows, columns, width, height):
     image = load_image(os.path.join('sprites', 'mobs', image_file), -1)
@@ -86,6 +88,7 @@ class Mob(pygame.sprite.Sprite):
         self.animation = animation
         self.animation_index = 0.
         self.animation_speed = animation_speed
+        mobslist.append(self)
 
     def update(self):
         if self.health > 0:
@@ -107,7 +110,8 @@ class Mob(pygame.sprite.Sprite):
 
                 # Отрисовка полоски здоровья
                 pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30, 5))
-                pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
+                pygame.draw.rect(screen, 'green',
+                                 (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
             except IndexError:
                 self.kill()
         else:
@@ -119,47 +123,63 @@ class AttackTower(pygame.sprite.Sprite):
         super().__init__(group)
         self.type = type_of_tower
         self.health = 1000
-        self.tower_coords = (900, 100)
+        self.tower_coords = (960, 60)
+        self.bullet_range = 0
         self.rect = pygame.Rect(*self.tower_coords, 5, 5)
-        # self.image = pygame.transform.scale(load_image())
+        self.bullet_group = pygame.sprite.Group()
+        self.image = pygame.transform.scale(load_image(os.path.join('sprites', 'towers', 'ordinary_high_tower.png'), -1), (250, 250))
+        if self.type == 'Long':
+            self.bullet_range = 30
+        elif self.type == 'Short':
+            self.bullet_range = 200
+        else:
+            self.bullet_range = 400
+        self.bullet = Bullet(self.tower_coords)
 
     def update(self):
-        Bullet(self.tower_coords, 'Long')
+        for mob in mobslist:
+            if int(math.sqrt(abs(self.tower_coords[0] - mob.coords[0]) + abs(self.tower_coords[1] - mob.coords[1]))) < self.bullet_range:
+                self.bullet.mob = mob
+                self.bullet.update()
+                self.bullet.draw(screen)
         if self.health > 0:
             pygame.draw.rect(screen, 'red', (int(self.tower_coords[0] + 15), int(self.tower_coords[1]) - 10, 30, 5))
-            pygame.draw.rect(screen, 'green',(int(self.tower_coords[0] + 15), int(self.tower_coords[1]) - 10, 30 * self.health // 100, 5))
+            pygame.draw.rect(screen, 'green', (int(self.tower_coords[0] + 15), int(self.tower_coords[1]) - 10, 30 * self.health // 100, 5))
         else:
             self.kill()
 
 
-class Bullet(pygame.sprite.Sprite):
-    def __init__(self, coords, type_of_tower, group=None):
-        super().__init__(group)
-        self.coords = coords
-        self.type = type_of_tower
-        self.rect = pygame.Rect(*self.coords, 5, 5)
-        if self.type == 'Long':
-            self.bullet_range = 400
-        elif self.type == 'Short':
-            self.bullet_range = 300
-        else:
-            self.bullet_range = 500
-        # self.image = pygame.transform.scale(load_image())
-
-    def solution(self):
-        for mob in mobslist:
-            print(mob.coords[0])
-            if int(sqrt((self.coords[0] - mob.coords[0]) + (self.coords[1] - mob.coords[1]))) < self.bullet_range:
-                return True
-            else:
-                return False
+class Bullet:
+    def __init__(self, coords, mob=None):
+        coords = (coords[0] + 125, coords[1] + 62)
+        self.start = coords
+        self.pos = coords
+        self.mob = mob
+        self.speed = 2
 
     def update(self):
-        if self.solution():
-            if self.rect.x == -10:
-                self.rect.x, self.rect.y = self.coords
-            self.rect.x, self.rect.y = self.rect.x + 5, self.rect.x + 5
-        self.rect.x, self.rect.y = -10, 0
+        mx, my = self.mob.coords
+        self.dir = (mx - self.pos[0], my - self.pos[1])
+        length = math.hypot(*self.dir)
+        if length == 0.0:
+            self.dir = (0, -1)
+        else:
+            self.dir = (self.dir[0] / length, self.dir[1] / length)
+        angle = math.degrees(math.atan2(-self.dir[1], self.dir[0]))
+
+        self.bullet = pygame.Surface((25, 25)).convert_alpha()
+        self.bullet.fill((0, 0, 0, 0))
+        self.bullet = pygame.transform.scale(load_image(os.path.join('sprites', 'arrow.png'), -1), (25, 25))
+        self.bullet = pygame.transform.rotate(self.bullet, angle)
+        if self.pos[0] + 20 < self.mob.coords[0] and self.pos[1] + 20 < self.mob.coords[1]:
+            self.pos = (self.pos[0]+self.dir[0]*self.speed, self.pos[1]+self.dir[1]*self.speed)
+        else:
+            self.mob.health -= 50
+            self.pos = self.start
+
+    def draw(self, surf):
+        bullet_rect = self.bullet.get_rect(center = self.pos)
+        surf.blit(self.bullet, bullet_rect)
 
 
 class MainTower(pygame.sprite.Sprite):
@@ -172,7 +192,8 @@ class MainTower(pygame.sprite.Sprite):
 
     def update(self):
         pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30, 5))
-        pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
+        pygame.draw.rect(screen, 'green',
+                         (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
 
 
 class Button(pygame.sprite.Sprite):
@@ -224,6 +245,7 @@ class Game:
     def start(self):
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
         self.mobs_spawn_thread.start()
+        self.spawn_tower()
 
     def load_plants(self):
         plants_data = []
@@ -237,6 +259,9 @@ class Game:
                 plants_data[-1] = (plants_data[-1], plant_sprite)
         plants_data = dict(plants_data)
         return plants_data
+
+    def spawn_tower(self):
+        AttackTower(group=self.towers)
 
     def spawn_mob(self, road_num):
         if random.random() >= 0.5:
@@ -333,6 +358,7 @@ class Game:
     def update_and_render(self):
         self.map.render(self.screen)
         self.mobs.update()
+        self.towers.update()
         self.mobs.draw(self.screen)
         self.plants.draw(self.screen)
         self.towers.draw(self.screen)
