@@ -91,9 +91,6 @@ class Mob(pygame.sprite.Sprite):
     def __init__(self, type, way, group):
         super().__init__(group)
         self.way = way
-        # FIXME
-        global circles
-        circles.extend(way)
         self.load_info(type)
 
     def load_info(self, type):
@@ -113,19 +110,19 @@ class Mob(pygame.sprite.Sprite):
         self.rect = pygame.Rect(self.coords[0] - self.width / 2, self.coords[1] - self.height / 2, self.width, self.height)
 
     def get_position(self, time):
-        global circles
         index = self.pos
-        steps = self.steps[1]
+        steps = self.steps[1] - self.steps[0]
         way_len = len(self.way)
-        while index < way_len:
+        while index < way_len - 1:
             if steps < time:
                 time -= steps
             else:
-                way_point_1 = self.way[index]
-                way_point_2 = self.way[index + 1]
+                if index > self.pos:
+                    way_point_1 = self.way[index - 1]
+                else:
+                    way_point_1 = self.coords
+                way_point_2 = self.way[index]
                 d_x, d_y = way_point_2[0] - way_point_1[0], way_point_2[1] - way_point_1[1]
-                circles.append((way_point_1[0] + d_x / steps * time, way_point_1[1] + d_y / steps * time))
-                print(steps, time)
                 return (way_point_1[0] + d_x / steps * time,
                         way_point_1[1] + d_y / steps * time)
             start_point = self.way[index]
@@ -134,7 +131,7 @@ class Mob(pygame.sprite.Sprite):
             d_x, d_y = end_point[0] - start_point[0], end_point[1] - start_point[1]
             steps = math.hypot(d_x, d_y) / self.velocity
         else:
-            return self.way[-1][0]
+            return self.way[-1]
 
     def update(self):
         if self.health > 0:
@@ -158,9 +155,9 @@ class Mob(pygame.sprite.Sprite):
                              ))
             try:
                 if self.steps[0] >= self.steps[1]:
-                    start_point = tuple(map(lambda coord: coord + random.randint(-3, 3), self.way[self.pos]))
+                    start_point = self.way[self.pos]
                     self.pos += 1
-                    end_point = tuple(map(lambda coord: coord + random.randint(-3, 3), self.way[self.pos]))
+                    end_point = self.way[self.pos]
                     d_x, d_y = end_point[0] - start_point[0], end_point[1] - start_point[1]
                     self.steps = [0, math.hypot(d_x, d_y) // self.velocity]
                     self.x_velocity, self.y_velocity = d_x, d_y
@@ -217,7 +214,7 @@ class AttackTower(pygame.sprite.Sprite):
         self.time_to_reload = 100
         self.width = 250
         self.height = 250
-        self.shooting_range = 500
+        self.shooting_range = 600
         self.damage = 10
         self.tower_level = 1
         self.image = load_image(os.path.join('sprites', 'towers', 'ordinary_high_tower.png'), -1)
@@ -241,21 +238,20 @@ class AttackTower(pygame.sprite.Sprite):
 class Bullet(pygame.sprite.Sprite):
     def __init__(self, start_coords, mob, distance_to_target, damage, group):
         super().__init__(group)
-        self.start_coords = start_coords
+        self.coords = list(start_coords)
         self.mob = mob
         self.distance_to_mob = distance_to_target
         self.damage = damage
-        self.rect = pygame.Rect(self.start_coords[0] - 5, self.start_coords[1] - 5, 10, 10)
-        self.velocity = 400 / FPS
+        self.rect = pygame.Rect(self.coords[0] - 5, self.coords[1] - 5, 10, 10)
+        self.velocity = 600 / FPS
         self.steps, self.steps_to_target, self.angle = 0, None, 0
         self.calculate_trajectory()
         self.image = pygame.transform.rotate(load_image(os.path.join('sprites', 'arrow.png')), self.angle)
 
     def calculate_trajectory(self):
         flight_time = self.distance_to_mob / self.velocity
-        print(self.distance_to_mob, flight_time)
         self.end_coords = self.mob.get_position(flight_time)
-        d_x, d_y = self.end_coords[0] - self.start_coords[0], self.end_coords[1] - self.start_coords[1]
+        d_x, d_y = self.end_coords[0] - self.coords[0], self.end_coords[1] - self.coords[1]
         distance = math.hypot(d_x, d_y)
         self.velocity = distance / flight_time
         self.step = (d_x / distance * self.velocity,
@@ -268,8 +264,10 @@ class Bullet(pygame.sprite.Sprite):
 
     def update(self):
         if self.steps < self.steps_to_target:
-            self.rect.x += self.step[0]
-            self.rect.y += self.step[1]
+            self.coords[0] += self.step[0]
+            self.coords[1] += self.step[1]
+            self.rect.x = self.coords[0] - 5
+            self.rect.y = self.coords[1] - 5
             self.steps += 1
         else:
             self.mob.hit(self.damage)
@@ -465,7 +463,6 @@ if __name__ == '__main__':
     game.begin()
     time = pygame.time.Clock()
     running = True
-    circles = []
     while running:
         time.tick(FPS)
         for event in pygame.event.get():
@@ -475,6 +472,4 @@ if __name__ == '__main__':
                 game.on_tap(event.key)
         screen.fill('black')
         game.update_and_render()
-        for i in circles:
-            pygame.draw.circle(screen, 'blue', i, 3)
         pygame.display.flip()
