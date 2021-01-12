@@ -9,12 +9,12 @@ CRYSTAL_GOLEM = 'crystal_golem'
 
 MOBS = {
     1: (
-        (1, 0, STONE_GOLEM),
+        (1, 0, SKILLET),
         (2, 0, CRYSTAL_GOLEM),
         (1, 0, HORNY_DOG),
         (1, 0, BOAR_WARRIOR),
         (2, 0, MASK),
-        (3, 0, SKILLET),
+        (3, 0, STONE_GOLEM),
         (1, 0, HORNY_DOG),
         (2, 0, SKILLET),
         (3, 0, BOAR_WARRIOR)

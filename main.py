@@ -92,6 +92,7 @@ class Mob(pygame.sprite.Sprite):
         super().__init__(group)
         self.way = way
         self.load_info(type)
+        self.killed = False
 
     def load_info(self, type):
         with open(os.path.join('mobs', type, 'info.json'), 'r', encoding='utf-8') as info_file:
@@ -110,6 +111,8 @@ class Mob(pygame.sprite.Sprite):
         self.rect = pygame.Rect(self.coords[0] - self.width / 2, self.coords[1] - self.height / 2, self.width, self.height)
 
     def get_position(self, time):
+        """Возвращает координату, в которой окажется моб через заданное кол-во обновлений экрана"""
+        # time - кол-во обновлений экрана
         index = self.pos
         steps = self.steps[1] - self.steps[0]
         way_len = len(self.way)
@@ -182,6 +185,7 @@ class Mob(pygame.sprite.Sprite):
         self.health -= damage
 
     def kill(self):
+        self.killed = True
         def new_update(self):
             try:
                 if round(self.animation_index, 1).is_integer():
@@ -204,7 +208,7 @@ class Button(pygame.sprite.Sprite):
         self.image = load_image(os.path.join('sprites', 'buttons', filename), -1)
 
 
-class AttackTower(pygame.sprite.Sprite):
+class BowTower(pygame.sprite.Sprite):
     def __init__(self, coords, moblist, bullets_group, group):
         super().__init__(group)
         self.coords = (coords[0] + 125, coords[1] - 25)
@@ -216,8 +220,7 @@ class AttackTower(pygame.sprite.Sprite):
         self.height = 250
         self.shooting_range = 600
         self.damage = 10
-        self.tower_level = 1
-        self.image = load_image(os.path.join('sprites', 'towers', 'ordinary_high_tower.png'), -1)
+        self.image = load_image(os.path.join('sprites', 'towers', 'bow_tower.png'), -1)
         self.rect = pygame.Rect(self.coords[0] - self.width // 2,
                                 self.coords[1] - self.height // 2 + 100,
                                 self.width,
@@ -227,7 +230,7 @@ class AttackTower(pygame.sprite.Sprite):
         if not self.reloading:
             for mob in self.moblist:
                 distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
-                if distance <= self.shooting_range and mob.alive():
+                if distance <= self.shooting_range and not mob.killed:
                     Bullet(self.coords, mob, distance, self.damage, self.bullets_group)
                     self.reloading = self.time_to_reload
                     return
@@ -245,10 +248,14 @@ class Bullet(pygame.sprite.Sprite):
         self.rect = pygame.Rect(self.coords[0] - 5, self.coords[1] - 5, 10, 10)
         self.velocity = 600 / FPS
         self.steps, self.steps_to_target, self.angle = 0, None, 0
+        # Путь до цели будет разбит на шаги.
+        # steps_to_target - количество шагов до цели, steps - количество пройденных шагов
+        # angle - угол, под которым летит стрела
         self.calculate_trajectory()
         self.image = pygame.transform.rotate(load_image(os.path.join('sprites', 'arrow.png')), self.angle)
 
     def calculate_trajectory(self):
+        """Рассчитывает маршрут полёта стрелы до противника и угол, под которым полетит стрела"""
         flight_time = self.distance_to_mob / self.velocity
         self.end_coords = self.mob.get_position(flight_time)
         d_x, d_y = self.end_coords[0] - self.coords[0], self.end_coords[1] - self.coords[1]
@@ -274,6 +281,57 @@ class Bullet(pygame.sprite.Sprite):
             self.kill()
 
 
+class AddTowerMenu(pygame.sprite.Sprite):
+    width = 400
+    height = 180
+
+    def __init__(self, coords, plant, moblist, group_for_towers, group_for_bullets, group):
+        super().__init__(group)
+        self.coords = coords
+        self.plant = plant
+        self.moblist = moblist
+        self.group_for_towers = group_for_towers
+        self.group_for_bullets = group_for_bullets
+        self.image = ADD_TOWER_MENU_IMAGE
+        self.width, self.height = AddTowerMenu.width, AddTowerMenu.height
+        self.rect = pygame.Rect(self.coords[0] - 125 / 2,
+                                self.coords[1] - 125 / 2,
+                                self.width,
+                                self.height)
+        self.buttons = pygame.sprite.Group()
+        self.bow_tower_button = Button(
+            (self.coords[0] - 5, self.coords[1] - 30, 80, 80),
+            'bow_tower_icon.png',
+            self.buttons
+        )
+        self.gun_tower_button = Button(
+            (self.coords[0] + 95, self.coords[1] - 30, 80, 80),
+            'gun_tower_icon.png',
+            self.buttons
+        )
+        self.rocket_tower_button = Button(
+            (self.coords[0] + 195, self.coords[1] - 30, 80, 80),
+            'rocket_tower_icon.png',
+            self.buttons
+        )
+
+    def check_click(self, click):
+        if click.colliderect(self.bow_tower_button):
+            self.spawn_tower(BowTower)
+        elif click.colliderect(self.gun_tower_button):
+            self.spawn_tower(BowTower)
+        elif click.colliderect(self.rocket_tower_button):
+            self.spawn_tower(BowTower)
+
+    def spawn_tower(self, tower):
+        tower(self.coords, self.moblist, self.group_for_bullets, self.group_for_towers)
+        self.plant.free = False
+        self.plant.kill()
+
+    def draw_buttons(self, surface):
+        self.buttons.draw(surface)
+
+
 class Game:
     def __init__(self, screen):
         self.screen = screen
@@ -292,6 +350,7 @@ class Game:
         self.towers = pygame.sprite.Group()
         self.bullets = pygame.sprite.Group()
         self.buttons = pygame.sprite.Group()
+        self.add_tower_menus = pygame.sprite.Group()
         self.pause_button = Button((1800, 30, 80, 80), 'pause.png', self.buttons)
         self.on_pause = False
         self.mob_query = []
@@ -302,8 +361,7 @@ class Game:
         background = load_image(os.path.join('sprites', 'background_image.png'))
         buttons = pygame.sprite.Group()
         single_player_button = Button((800, 500, 350, 90), 'start_single_game.png', buttons)
-        online_game_button = Button((800, 650, 350, 90), 'start_online_game.png', buttons)
-        exit_button = Button((800, 800, 350, 90), 'exit.png', buttons)
+        exit_button = Button((800, 650, 350, 90), 'exit.png', buttons)
         self.screen.blit(background, (0, 0))
         buttons.draw(self.screen)
         # Ожидание юзер инпута
@@ -314,8 +372,6 @@ class Game:
                     if click.colliderect(single_player_button):
                         self.start()
                         return
-                    elif click.colliderect(online_game_button):
-                        print('It must start online mode')
                     elif click.colliderect(exit_button):
                         self.quit()
                 elif event.type == pygame.KEYDOWN:
@@ -336,6 +392,7 @@ class Game:
                 plant_sprite = pygame.sprite.Sprite(self.plants)
                 plant_sprite.rect = pygame.Rect(*plants_data[-1], 250, 250)
                 plant_sprite.image = plant_image
+                plant_sprite.free = True
                 plants_data[-1] = (plant_sprite, plants_data[-1])
         plants_data = dict(plants_data)
         return plants_data
@@ -350,18 +407,24 @@ class Game:
                     little_intervals_counter += 1
             self.mob_query.append((mob_type, road_num))
 
-    def spawn_tower(self, coords):
-        AttackTower(coords, self.moblist, self.bullets, self.towers)
-
     def on_click(self, pos):
         click = pygame.Rect(*pos, 1, 1)
         if click.colliderect(self.pause_button):
+            self.close_add_tower_menu()
+            self.update_and_render()
             self.pause()
             return
         for plant in self.plants_data:
-            if click.colliderect(plant):
-                self.spawn_tower(self.plants_data[plant])
-                plant.kill()
+            if click.colliderect(plant) and plant.free:
+                self.close_add_tower_menu()
+                AddTowerMenu(self.plants_data[plant], plant, self.moblist, self.towers, self.bullets, self.add_tower_menus)
+                return
+        for add_tower_menu in self.add_tower_menus:
+            add_tower_menu.check_click(click)
+        # Если пользователь нажал в любое место экрана, но не на кнопку,
+        # то открытое меню добавления башни, если оно есть, закроется:
+        self.close_add_tower_menu()
+
 
     def on_tap(self, key):
         if key == pygame.K_TAB:
@@ -448,7 +511,14 @@ class Game:
         self.towers.draw(self.screen)
         self.bullets.update()
         self.bullets.draw(self.screen)
+        self.add_tower_menus.draw(self.screen)
+        for add_tower_menu in self.add_tower_menus:
+            add_tower_menu.draw_buttons(self.screen)
         self.buttons.draw(self.screen)
+
+    def close_add_tower_menu(self):
+        for add_tower_menu in self.add_tower_menus:
+            add_tower_menu.kill()
 
     def quit(self):
         pygame.quit()
@@ -459,6 +529,7 @@ if __name__ == '__main__':
     pygame.init()
     screen = pygame.display.set_mode(SIZE)
     MOB_ANIMATIONS = load_mob_animations()
+    ADD_TOWER_MENU_IMAGE = load_image(os.path.join('sprites', 'add_tower_menu.png'))
     game = Game(screen)
     game.begin()
     time = pygame.time.Clock()
