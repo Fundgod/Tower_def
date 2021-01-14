@@ -88,9 +88,11 @@ class Map:
 
 
 class Mob(pygame.sprite.Sprite):
-    def __init__(self, type, way, group):
+    def __init__(self, type, way, main_tower, group):
         super().__init__(group)
         self.way = way
+        self.cnt = 0
+        self.main_tower = main_tower
         self.load_info(type)
         self.killed = False
 
@@ -174,6 +176,9 @@ class Mob(pygame.sprite.Sprite):
             self.kill()
 
     def attack(self):
+        self.cnt += 1
+        if self.cnt % 60 == 0:
+            self.main_tower.health -= 12
         attack_animation = self.animations['attack']
         if self.animation != attack_animation:
             self.animation = attack_animation
@@ -335,10 +340,11 @@ class AddTowerMenu(pygame.sprite.Sprite):
 class MainTower(pygame.sprite.Sprite):
     def __init__(self, bullets_group, moblist,  group):
         super().__init__(group)
-        self.rect = pygame.Rect(100, 850, 10, 10)
-        self.coords = (100, 850)
-        self.image = pygame.transform.scale(load_image(os.path.join('sprites', 'main_1_0.png')), -1)
-        self.health = 10000
+        self.rect = pygame.Rect(20, 670, 10, 10)
+        self.coords = (20, 670)
+        self.image = pygame.transform.scale(load_image(os.path.join('sprites', 'main_1_0.png'), -1), (300, 300))
+        self.health = 1000
+        self.full_hp = self.health
         self.moblist = moblist
         self.bullets_group = bullets_group
         self.reloading = 0
@@ -346,9 +352,12 @@ class MainTower(pygame.sprite.Sprite):
         self.shooting_range = 400
         self.damage = 20
 
+    def update_mobslist(self, mobslist):
+        self.moblist = mobslist
+
     def update(self):
         if self.health > 0:
-            pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30, 5))
+            pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.full_hp // 100, 5))
             pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
         else:
             self.kill()
@@ -358,12 +367,12 @@ class MainTower(pygame.sprite.Sprite):
             for mob in self.moblist:
                 distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
                 if distance <= self.shooting_range and not mob.killed:
-                    Bullet(self.coords, mob, distance, self.damage, self.bullets_group)
+                    coords = (self.coords[0] + 135, self.coords[1] + 70)
+                    Bullet(coords, mob, distance, self.damage, self.bullets_group)
                     self.reloading = self.time_to_reload
                     return
         else:
             self.reloading -= 1
-
 
 
 class Game:
@@ -384,11 +393,13 @@ class Game:
         self.towers = pygame.sprite.Group()
         self.bullets = pygame.sprite.Group()
         self.buttons = pygame.sprite.Group()
+        self.main_tower = pygame.sprite.Group()
         self.add_tower_menus = pygame.sprite.Group()
         self.pause_button = Button((1800, 30, 80, 80), 'pause.png', self.buttons)
         self.on_pause = False
         self.mob_query = []
         self.moblist = []
+        self.mt = MainTower(self.bullets, self.moblist, self.main_tower)
 
     def begin(self):
         # Инициализация фоновой картинки и кнопок
@@ -458,7 +469,6 @@ class Game:
         # Если пользователь нажал в любое место экрана, но не на кнопку,
         # то открытое меню добавления башни, если оно есть, закроется:
         self.close_add_tower_menu()
-
 
     def on_tap(self, key):
         if key == pygame.K_TAB:
@@ -534,9 +544,12 @@ class Game:
     def update_and_render(self):
         if self.mob_query:
             mob_type, road_num = self.mob_query.pop(-1)
-            mob = Mob(mob_type, self.map.get_way(road_num), self.mobs[mob_type])
+            mob = Mob(mob_type, self.map.get_way(road_num), self.mt, self.mobs[mob_type])
             self.moblist.append(mob)
         self.map.render(self.screen)
+        self.mt.update_mobslist(self.moblist)
+        self.main_tower.update()
+        self.main_tower.draw(self.screen)
         for mob_type in (HORNY_DOG, BOAR_WARRIOR, SKILLET, CRYSTAL_GOLEM, STONE_GOLEM, MASK):
             self.mobs[mob_type].update()
             self.mobs[mob_type].draw(self.screen)
