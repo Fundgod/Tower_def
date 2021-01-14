@@ -332,6 +332,40 @@ class AddTowerMenu(pygame.sprite.Sprite):
         self.buttons.draw(surface)
 
 
+class MainTower(pygame.sprite.Sprite):
+    def __init__(self, bullets_group, moblist,  group):
+        super().__init__(group)
+        self.rect = pygame.Rect(100, 850, 10, 10)
+        self.coords = (100, 850)
+        self.image = pygame.transform.scale(load_image(os.path.join('sprites', 'main_1_0.png')), -1)
+        self.health = 10000
+        self.moblist = moblist
+        self.bullets_group = bullets_group
+        self.reloading = 0
+        self.time_to_reload = 60
+        self.shooting_range = 400
+        self.damage = 20
+
+    def update(self):
+        if self.health > 0:
+            pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30, 5))
+            pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
+        else:
+            self.kill()
+            # здесь по идеи должна поменяться картинка, а не башня должа испариться, но картинки ещё нет
+
+        if not self.reloading:
+            for mob in self.moblist:
+                distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
+                if distance <= self.shooting_range and not mob.killed:
+                    Bullet(self.coords, mob, distance, self.damage, self.bullets_group)
+                    self.reloading = self.time_to_reload
+                    return
+        else:
+            self.reloading -= 1
+
+
+
 class Game:
     def __init__(self, screen):
         self.screen = screen
