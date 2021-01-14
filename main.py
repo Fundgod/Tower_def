@@ -99,16 +99,18 @@ class Mob(pygame.sprite.Sprite):
             self.info = json.load(info_file)
         self.width, self.height = self.info['move']['width'], self.info['move']['height']
         self.velocity = self.info['velocity'] / FPS
+        self.health = self.max_health = self.info['health']
+        self.cost = self.info['cost']
         self.animations = MOB_ANIMATIONS[type]
         self.animation = self.animations['move']
         self.animation_index = 0.
         self.animation_speed = self.info['move']['animation_speed']
         self.health_line_bias = tuple(self.info['health_line_bias'].values())
         self.pos = 0
-        self.health = 100
         self.coords = list(self.way[self.pos])
         self.steps = [0, 0]
         self.rect = pygame.Rect(self.coords[0] - self.width / 2, self.coords[1] - self.height / 2, self.width, self.height)
+        self.tagged = False
 
     def get_position(self, time):
         """Возвращает координату, в которой окажется моб через заданное кол-во обновлений экрана"""
@@ -153,7 +155,7 @@ class Mob(pygame.sprite.Sprite):
                              (
                                  int(self.coords[0] - self.width / 2 + self.health_line_bias[0]),
                                  int(self.coords[1]) - self.height / 2 - self.health_line_bias[1],
-                                 30 * self.health // 100,
+                                 30 * self.health / self.max_health,
                                  5
                              ))
             try:
@@ -186,6 +188,8 @@ class Mob(pygame.sprite.Sprite):
 
     def kill(self):
         self.killed = True
+        Game.currency += self.cost
+
         def new_update(self):
             try:
                 if round(self.animation_index, 1).is_integer():
@@ -205,10 +209,12 @@ class Button(pygame.sprite.Sprite):
     def __init__(self, coords, filename, group=None):
         super().__init__(group)
         self.rect = pygame.Rect(*coords)
-        self.image = load_image(os.path.join('sprites', 'buttons', filename), -1)
+        self.image = load_image(os.path.join('sprites', 'buttons', filename))
 
 
 class BowTower(pygame.sprite.Sprite):
+    cost = 50
+
     def __init__(self, coords, moblist, bullets_group, group):
         super().__init__(group)
         self.coords = (coords[0] + 125, coords[1] - 25)
@@ -228,7 +234,7 @@ class BowTower(pygame.sprite.Sprite):
 
     def update(self):
         if not self.reloading:
-            for mob in self.moblist:
+            for mob in sorted(self.moblist, key=lambda mob_: not mob_.tagged):
                 distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
                 if distance <= self.shooting_range and not mob.killed:
                     Bullet(self.coords, mob, distance, self.damage, self.bullets_group)
@@ -236,6 +242,14 @@ class BowTower(pygame.sprite.Sprite):
                     return
         else:
             self.reloading -= 1
+
+
+class GunTower(pygame.sprite.Sprite):
+    cost = 100
+
+
+class RocketTower(pygame.sprite.Sprite):
+    cost = 150
 
 
 class Bullet(pygame.sprite.Sprite):
@@ -285,54 +299,98 @@ class AddTowerMenu(pygame.sprite.Sprite):
     width = 400
     height = 180
 
-    def __init__(self, coords, plant, moblist, group_for_towers, group_for_bullets, group):
+    def __init__(self, coords, plant, moblist, currency, group_for_towers, group_for_bullets, group):
         super().__init__(group)
         self.coords = coords
         self.plant = plant
         self.moblist = moblist
         self.group_for_towers = group_for_towers
         self.group_for_bullets = group_for_bullets
+        self.currency = currency
         self.image = ADD_TOWER_MENU_IMAGE
         self.width, self.height = AddTowerMenu.width, AddTowerMenu.height
-        self.rect = pygame.Rect(self.coords[0] - 125 / 2,
-                                self.coords[1] - 125 / 2,
+        self.rect = pygame.Rect(self.coords[0] - 70,
+                                self.coords[1] - 100,
                                 self.width,
                                 self.height)
         self.buttons = pygame.sprite.Group()
         self.bow_tower_button = Button(
-            (self.coords[0] - 5, self.coords[1] - 30, 80, 80),
+            (self.coords[0] - 5, self.coords[1] - 60, 80, 80),
             'bow_tower_icon.png',
             self.buttons
         )
+        self.cost1 = SMALL_FONT.render(str(BowTower.cost), True, (245, 189, 31))
         self.gun_tower_button = Button(
-            (self.coords[0] + 95, self.coords[1] - 30, 80, 80),
+            (self.coords[0] + 95, self.coords[1] - 60, 80, 80),
             'gun_tower_icon.png',
             self.buttons
         )
+        self.cost2 = SMALL_FONT.render(str(GunTower.cost), True, (245, 189, 31))
         self.rocket_tower_button = Button(
-            (self.coords[0] + 195, self.coords[1] - 30, 80, 80),
+            (self.coords[0] + 195, self.coords[1] - 60, 80, 80),
             'rocket_tower_icon.png',
             self.buttons
         )
+        self.cost3 = SMALL_FONT.render(str(RocketTower.cost), True, (245, 189, 31))
 
     def check_click(self, click):
         if click.colliderect(self.bow_tower_button):
-            self.spawn_tower(BowTower)
+            if self.currency >= BowTower.cost:
+                self.spawn_tower(BowTower)
         elif click.colliderect(self.gun_tower_button):
-            self.spawn_tower(BowTower)
+            if self.currency >= BowTower.cost:
+                self.spawn_tower(BowTower)
         elif click.colliderect(self.rocket_tower_button):
-            self.spawn_tower(BowTower)
+            if self.currency >= BowTower.cost:
+                self.spawn_tower(BowTower)
 
     def spawn_tower(self, tower):
         tower(self.coords, self.moblist, self.group_for_bullets, self.group_for_towers)
+        Game.currency -= tower.cost
         self.plant.free = False
         self.plant.kill()
 
     def draw_buttons(self, surface):
         self.buttons.draw(surface)
+        costs_height = self.coords[1] + 20
+        surface.blit(self.cost1, (self.coords[0] + 15, costs_height))
+        surface.blit(self.cost2, (self.coords[0] + 105, costs_height))
+        surface.blit(self.cost3, (self.coords[0] + 205, costs_height))
+        surface.blit(SMALL_COIN_ICON, (self.coords[0] + 45, costs_height))
+        surface.blit(SMALL_COIN_ICON, (self.coords[0] + 150, costs_height))
+        surface.blit(SMALL_COIN_ICON, (self.coords[0] + 250, costs_height))
+
+
+class MobMark(pygame.sprite.Group):
+    def __init__(self):
+        super().__init__()
+        self.image = MOB_MARK
+        self.sprite = pygame.sprite.Sprite(self)
+        self.sprite.rect = pygame.Rect(0, 0, 60, 60)
+        self.size = 60
+        self.exist = False
+
+    def place(self, x, y):
+        self.sprite.rect.x = x - 30
+        self.sprite.rect.y = y - 30
+        self.sprite.image = self.image
+        self.size = 60
+        self.exist = True
+
+    def update_and_render(self, surface):
+        if self.exist:
+            self.sprite.image = pygame.transform.scale(self.image, (self.size, self.size))
+            self.draw(surface)
+            self.size -= 2
+            self.sprite.rect.x += 1
+            self.sprite.rect.y += 1
+            if self.size <= 0:
+                self.exist = False
 
 
 class Game:
+    currency = 100
+
     def __init__(self, screen):
         self.screen = screen
         self.level = 1
@@ -355,6 +413,8 @@ class Game:
         self.on_pause = False
         self.mob_query = []
         self.moblist = []
+        self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
+        self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
 
     def begin(self):
         # Инициализация фоновой картинки и кнопок
@@ -385,7 +445,7 @@ class Game:
 
     def load_plants(self):
         plants_data = []
-        plant_image = load_image('sprites/plant.png', -1)
+        plant_image = load_image('sprites/plant.png')
         with open(os.path.join(self.map.dir, 'plants.csv'), 'r') as f:
             for line in f.readlines():
                 plants_data.append(tuple(map(lambda coord: float(coord) - 125, line.rstrip().split(';'))))
@@ -409,21 +469,29 @@ class Game:
 
     def on_click(self, pos):
         click = pygame.Rect(*pos, 1, 1)
-        if click.colliderect(self.pause_button):
+        for add_tower_menu in self.add_tower_menus:
+            add_tower_menu.check_click(click)
             self.close_add_tower_menu()
+            return
+        # Если пользователь нажал в любое место экрана, но не на кнопку,
+        # то открытое меню добавления башни, если оно есть, закроется:
+        self.close_add_tower_menu()
+        if click.colliderect(self.pause_button):
             self.update_and_render()
             self.pause()
             return
         for plant in self.plants_data:
             if click.colliderect(plant) and plant.free:
-                self.close_add_tower_menu()
-                AddTowerMenu(self.plants_data[plant], plant, self.moblist, self.towers, self.bullets, self.add_tower_menus)
+                AddTowerMenu(self.plants_data[plant], plant, self.moblist, self.currency, self.towers, self.bullets, self.add_tower_menus)
                 return
-        for add_tower_menu in self.add_tower_menus:
-            add_tower_menu.check_click(click)
-        # Если пользователь нажал в любое место экрана, но не на кнопку,
-        # то открытое меню добавления башни, если оно есть, закроется:
-        self.close_add_tower_menu()
+        for mob in self.moblist:
+            if click.colliderect(mob):
+                mob.tagged = True
+                if self.tagged_mob is not None and self.tagged_mob != mob:
+                    self.tagged_mob.tagged = False
+                self.tagged_mob = mob
+                self.mob_mark.place(click.x, click.y)
+                return
 
 
     def on_tap(self, key):
@@ -497,6 +565,11 @@ class Game:
                         self.quit()
                 pygame.display.flip()
 
+    def render_currency(self):
+        self.screen.blit(COIN_ICON, (20, 20))
+        currency_text = CURRENCY_FONT.render(f': {Game.currency}', True, (245, 189, 31))
+        self.screen.blit(currency_text, (130, 40))
+
     def update_and_render(self):
         if self.mob_query:
             mob_type, road_num = self.mob_query.pop(-1)
@@ -515,6 +588,8 @@ class Game:
         for add_tower_menu in self.add_tower_menus:
             add_tower_menu.draw_buttons(self.screen)
         self.buttons.draw(self.screen)
+        self.render_currency()
+        self.mob_mark.update_and_render(self.screen)
 
     def close_add_tower_menu(self):
         for add_tower_menu in self.add_tower_menus:
@@ -530,6 +605,11 @@ if __name__ == '__main__':
     screen = pygame.display.set_mode(SIZE)
     MOB_ANIMATIONS = load_mob_animations()
     ADD_TOWER_MENU_IMAGE = load_image(os.path.join('sprites', 'add_tower_menu.png'))
+    COIN_ICON = load_image(os.path.join('sprites', 'coin.png'))
+    SMALL_COIN_ICON = pygame.transform.scale(load_image(os.path.join('sprites', 'coin.png')), (20, 20))
+    MOB_MARK = load_image(os.path.join('sprites', 'mark.png'))
+    CURRENCY_FONT = pygame.font.SysFont('Arial', 60)
+    SMALL_FONT = pygame.font.SysFont('Arial', 25)
     game = Game(screen)
     game.begin()
     time = pygame.time.Clock()

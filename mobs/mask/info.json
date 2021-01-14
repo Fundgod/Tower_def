@@ -18,5 +18,7 @@
     "x": 30,
     "y": 0
   },
-  "velocity": 30
+  "velocity": 30,
+  "health": 300,
+  "cost": 200
 }
