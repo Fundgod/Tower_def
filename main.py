@@ -4,6 +4,7 @@ import sys
 import os
 import json
 import math
+import sqlite3
 from threading import Thread
 from functools import partial
 from time import sleep
@@ -53,8 +54,8 @@ def load_mob_animations():
 
 
 class Map:
-    def __init__(self, number):
-        self.dir = f'map{number}'
+    def __init__(self, index):
+        self.dir = f'map{index}'
         self.ways = self.load_ways()
         self.sprite = self.load_sprite()
 
@@ -80,8 +81,10 @@ class Map:
         sprite.rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
         return group
 
-    def get_way(self, road_num):
-        return random.choice(self.ways[road_num])
+    def get_way(self, road_index, way_index=None):
+        if way_index is None:
+            return random.choice(self.ways[road_index])
+        return self.ways[road_index][way_index]
 
     def render(self, screen):
         self.sprite.draw(screen)
@@ -405,6 +408,8 @@ class AddTowerMenu(pygame.sprite.Sprite):
 
 
 class MobMark(pygame.sprite.Group):
+    """Класс крестика, который появляется на экране если кликнуть по мобу"""
+
     def __init__(self):
         super().__init__()
         self.image = MOB_MARK
@@ -463,31 +468,62 @@ class Game:
 
 
     def begin(self):
-        # Инициализация фоновой картинки и кнопок
+        # Инициализация фоновой картинки и главного меню
         background = load_image(os.path.join('sprites', 'background_image.png'))
-        buttons = pygame.sprite.Group()
-        single_player_button = Button((800, 500, 350, 90), 'start_single_game.png', buttons)
-        exit_button = Button((800, 650, 350, 90), 'exit.png', buttons)
+        menu = pygame.sprite.Group()
+        menu_table = pygame.sprite.Sprite(menu)
+        menu_table.rect = pygame.Rect(700, 400, 600, 450)
+        menu_table.image = load_image(os.path.join('sprites', 'main_menu.png'), -1)
+        single_player_button = Button((800, 500, 350, 90), 'start_single_game.png', menu)
+        exit_button = Button((800, 650, 350, 90), 'exit.png', menu)
+        state = 'main_menu'
+        save_slot_buttons = []
         self.screen.blit(background, (0, 0))
-        buttons.draw(self.screen)
+        menu.draw(self.screen)
         # Ожидание юзер инпута
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     click = pygame.Rect(*event.pos, 1, 1)
-                    if click.colliderect(single_player_button):
-                        self.start()
-                        return
-                    elif click.colliderect(exit_button):
-                        self.quit()
+                    if state == 'main_menu':
+                        if click.colliderect(single_player_button):
+                            state = 'choose_save_slot_menu'
+                            single_player_button.kill()
+                            exit_button.kill()
+                            menu_table.rect.y -= 150
+                            menu_table.image = load_image(os.path.join('sprites', 'save_slots_menu.png'))
+                            for save_slot in range(5):
+                                save_slot_buttons.append(Button(
+                                    (800, 400 + save_slot * 100, 340, 90),
+                                    f'save_slot_{save_slot + 1}.png',
+                                    menu
+                                ))
+                            self.screen.blit(background, (0, 0))
+                            menu.draw(self.screen)
+                            pygame.display.flip()
+                        elif click.colliderect(exit_button):
+                            self.quit()
+                    else:
+                        for index, button in enumerate(save_slot_buttons):
+                            if click.colliderect(button.rect):
+                                self.start(index + 1)
+                                return
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_END:
                         self.quit()
+                elif event.type == pygame.QUIT:
+                    self.quit()
             pygame.display.flip()
 
-    def start(self):
-        self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
+    def start(self, save_slot):
+        spawner_start = self.load_game_data(save_slot)
+        self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
+
+    def load_game_data(self, save_slot):
+        if False:
+            pass
+        return 0
 
     def load_plants(self):
         plants_data = []
@@ -503,15 +539,25 @@ class Game:
         plants_data = dict(plants_data)
         return plants_data
 
-    def spawn_mobs(self):
-        for interval, road_num, mob_type in MOBS[self.level]:
+    def spawn_mobs(self, start):
+        spawn_list = MOBS[self.level]
+        for index, (interval, road_index, mob_type) in enumerate(spawn_list):
+            if interval <= start:
+                start -= interval
+            else:
+                spawn_list = list(spawn_list[index:])
+                spawn_list[0] = (interval - start, road_index, mob_type)
+                spawn_list = tuple(spawn_list)
+                break
+        print(spawn_list)
+        for interval, road_index, mob_type in spawn_list:
             little_intervals_count = interval / 0.1
             little_intervals_counter = 0
             while little_intervals_counter != little_intervals_count:
                 sleep(0.1)
                 if not self.on_pause:
                     little_intervals_counter += 1
-            self.mob_query.append((mob_type, road_num))
+            self.mob_query.append((mob_type, road_index))
 
     def on_click(self, pos):
         click = pygame.Rect(*pos, 1, 1)
@@ -551,7 +597,7 @@ class Game:
         menu = pygame.sprite.Group()
         menu_table = pygame.sprite.Sprite(menu)
         menu_table.rect = pygame.Rect(660, 190, 600, 700)
-        menu_table.image = load_image(os.path.join('sprites', 'menu.png'), -1)
+        menu_table.image = load_image(os.path.join('sprites', 'pause_menu.png'), -1)
         continue_button = Button((770, 300, 350, 90), 'continue.png', menu)
         music_slider = Button((800, 483, 20, 40), 'slider.png', menu)
         sounds_slider = Button((800, 619, 20, 40), 'slider.png', menu)
@@ -617,8 +663,8 @@ class Game:
 
     def update_and_render(self):
         if self.mob_query:
-            mob_type, road_num = self.mob_query.pop(-1)
-            mob = Mob(mob_type, self.map.get_way(road_num), self.mt, self.mobs[mob_type])
+            mob_type, road_index = self.mob_query.pop(-1)
+            mob = Mob(mob_type, self.map.get_way(road_index), self.mt, self.mobs[mob_type])
             self.moblist.append(mob)
         self.map.render(self.screen)
         self.mt.update_mobslist(self.moblist)
