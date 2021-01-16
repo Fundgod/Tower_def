@@ -20,5 +20,6 @@
   },
   "velocity": 70,
   "health": 100,
+  "damage": 30,
   "cost": 30
 }

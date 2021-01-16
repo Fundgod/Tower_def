@@ -53,6 +53,11 @@ def load_mob_animations():
     return animations
 
 
+def load_bullet_sprites():
+    path = os.path.join('sprites', 'bullets')
+    return {file.split('.')[0]: load_image(os.path.join(path, file)) for file in os.listdir(path)}
+
+
 class Map:
     def __init__(self, index):
         self.dir = f'map{index}'
@@ -82,8 +87,12 @@ class Map:
         return group
 
     def get_way(self, road_index, way_index=None):
+        """Возвращает путь по заданным индексам дороги и пути.
+        Если индекс пути не задан, возвращается случайный путь и его индекс"""
         if way_index is None:
-            return random.choice(self.ways[road_index])
+            road = self.ways[road_index]
+            way_index = random.randint(0, len(road) - 1)
+            return road[way_index], way_index
         return self.ways[road_index][way_index]
 
     def render(self, screen):
@@ -91,31 +100,54 @@ class Map:
 
 
 class Mob(pygame.sprite.Sprite):
-    def __init__(self, type, way, main_tower, group):
+    def __init__(self, group, way, type, road_index, way_index, x=None, y=None, pos=0, state='move',
+                 animation_index=0., passed_steps=0, total_steps=0, health=None, tagged=False):
         super().__init__(group)
+        self.type = type
+        self.road_index = road_index
+        self.way_index = way_index
         self.way = way
-        self.cnt = 0
-        self.main_tower = main_tower
-        self.load_info(type)
-        self.killed = False
+        self.state = state
+        self.load_info(self.type)
+        self.pos = pos
+        self.animations = MOB_ANIMATIONS[self.type]
+        self.animation = self.animations[state]
+        self.animation_index = animation_index
+        self.steps = [passed_steps, total_steps]
+        self.tagged = tagged
+        if x is None:
+            self.coords = list(self.way[self.pos])
+        else:
+            self.coords = [x, y]
+            self.health = health
+            self.image = self.animation[int(self.animation_index)]
+            try:
+                if passed_steps < total_steps:
+                    start_point = self.way[self.pos]
+                    end_point = self.way[self.pos + 1]
+                    d_x, d_y = end_point[0] - start_point[0], end_point[1] - start_point[1]
+                    self.x_velocity = d_x / self.steps[1]
+                    self.y_velocity = d_y / self.steps[1]
+            except IndexError:  # Значит, моб дошёл до конца пути
+                self.x_velocity = 0
+                self.y_velocity = 0
+        self.rect = pygame.Rect(
+            self.coords[0] - self.width / 2,
+            self.coords[1] - self.height / 2,
+            self.width,
+            self.height
+        )
 
     def load_info(self, type):
         with open(os.path.join('mobs', type, 'info.json'), 'r', encoding='utf-8') as info_file:
             self.info = json.load(info_file)
-        self.width, self.height = self.info['move']['width'], self.info['move']['height']
+        self.width, self.height = self.info[self.state]['width'], self.info[self.state]['height']
         self.velocity = self.info['velocity'] / FPS
         self.health = self.max_health = self.info['health']
+        self.damage = self.info['damage']
         self.cost = self.info['cost']
-        self.animations = MOB_ANIMATIONS[type]
-        self.animation = self.animations['move']
-        self.animation_index = 0.
-        self.animation_speed = self.info['move']['animation_speed']
+        self.animation_speed = self.info[self.state]['animation_speed']
         self.health_line_bias = tuple(self.info['health_line_bias'].values())
-        self.pos = 0
-        self.coords = list(self.way[self.pos])
-        self.steps = [0, 0]
-        self.rect = pygame.Rect(self.coords[0] - self.width / 2, self.coords[1] - self.height / 2, self.width, self.height)
-        self.tagged = False
 
     def get_position(self, time):
         """Возвращает координату, в которой окажется моб через заданное кол-во обновлений экрана"""
@@ -170,10 +202,11 @@ class Mob(pygame.sprite.Sprite):
                     end_point = self.way[self.pos]
                     d_x, d_y = end_point[0] - start_point[0], end_point[1] - start_point[1]
                     self.steps = [0, math.hypot(d_x, d_y) // self.velocity]
-                    self.x_velocity, self.y_velocity = d_x, d_y
+                    self.x_velocity = d_x / self.steps[1]
+                    self.y_velocity = d_y / self.steps[1]
                 self.steps[0] += 1
-                self.coords[0] += self.x_velocity / self.steps[1]
-                self.coords[1] += self.y_velocity / self.steps[1]
+                self.coords[0] += self.x_velocity
+                self.coords[1] += self.y_velocity
                 self.rect.x, self.rect.y = self.coords[0] - self.width / 2, self.coords[1] - self.height / 2
             except IndexError:
                 self.attack()
@@ -181,11 +214,11 @@ class Mob(pygame.sprite.Sprite):
             self.kill()
 
     def attack(self):
-        self.cnt += 1
-        if self.cnt % 60 == 0:
-            self.main_tower.health -= 12
         attack_animation = self.animations['attack']
+        if int(self.animation_index) == len(attack_animation) - 1:
+            MainTower.health -= self.damage
         if self.animation != attack_animation:
+            self.state = 'attack'
             self.animation = attack_animation
             self.animation_speed = self.info['attack']['animation_speed']
             self.animation_index = 0 - self.animation_speed
@@ -195,7 +228,7 @@ class Mob(pygame.sprite.Sprite):
         self.health -= damage
 
     def kill(self):
-        self.killed = True
+        self.state = 'death'
         Game.currency += self.cost
 
         def new_update(self):
@@ -223,12 +256,13 @@ class Button(pygame.sprite.Sprite):
 class BowTower(pygame.sprite.Sprite):
     cost = 50
 
-    def __init__(self, coords, moblist, bullets_group, group):
+    def __init__(self, group, coords, moblist, bullets_group, reloading=0, animation_index=0):
         super().__init__(group)
         self.coords = (coords[0] + 125, coords[1] - 25)
         self.moblist = moblist
         self.bullets_group = bullets_group
-        self.reloading = 0
+        self.reloading = reloading
+        self.animation_index = animation_index
         self.time_to_reload = 100
         self.width = 250
         self.height = 250
@@ -244,30 +278,39 @@ class BowTower(pygame.sprite.Sprite):
         if not self.reloading:
             for mob in sorted(self.moblist, key=lambda mob_: not mob_.tagged):
                 distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
-                if distance <= self.shooting_range and not mob.killed:
-                    Bullet(self.coords, mob, distance, self.damage, self.bullets_group)
+                if distance <= self.shooting_range and mob.state != 'death':
+                    Bullet(self.bullets_group, self.coords, self.damage, 'arrow', distance, mob)
                     self.reloading = self.time_to_reload
                     return
         else:
             self.reloading -= 1
 
+    def __str__(self):
+        return 'bow'
+
 
 class GunTower(pygame.sprite.Sprite):
     cost = 100
+
+    def __str__(self):
+        return 'gun'
 
 
 class RocketTower(pygame.sprite.Sprite):
     cost = 150
 
+    def __str__(self):
+        return 'rocket'
+
 
 class MainTower(pygame.sprite.Sprite):
+    health, full_hp = 1000, 1000
+
     def __init__(self, bullets_group, moblist,  group):
         super().__init__(group)
         self.rect = pygame.Rect(20, 670, 10, 10)
         self.coords = (20, 670)
         self.image = pygame.transform.scale(load_image(os.path.join('sprites', 'main_1_0.png'), -1), (300, 300))
-        self.health = 1000
-        self.full_hp = self.health
         self.moblist = moblist
         self.bullets_group = bullets_group
         self.reloading = 0
@@ -289,9 +332,9 @@ class MainTower(pygame.sprite.Sprite):
         if not self.reloading:
             for mob in self.moblist:
                 distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
-                if distance <= self.shooting_range and not mob.killed:
+                if distance <= self.shooting_range and mob.state != 'death':
                     coords = (self.coords[0] + 135, self.coords[1] + 70)
-                    Bullet(coords, mob, distance, self.damage, self.bullets_group)
+                    Bullet(self.bullets_group, coords, self.damage, 'arrow', distance, mob)
                     self.reloading = self.time_to_reload
                     return
         else:
@@ -299,25 +342,36 @@ class MainTower(pygame.sprite.Sprite):
 
 
 class Bullet(pygame.sprite.Sprite):
-    def __init__(self, start_coords, mob, distance_to_target, damage, group):
+    def __init__(self, group, start_coords, damage, type, distance_to_target, mob,
+                 end_coords=None, velocity=None, angle=None):
         super().__init__(group)
+        self.type = type
         self.coords = list(start_coords)
-        self.mob = mob
-        self.distance_to_mob = distance_to_target
         self.damage = damage
         self.rect = pygame.Rect(self.coords[0] - 5, self.coords[1] - 5, 10, 10)
-        self.velocity = 600 / FPS
-        self.steps, self.steps_to_target, self.angle = 0, None, 0
-        # Путь до цели будет разбит на шаги.
-        # steps_to_target - количество шагов до цели, steps - количество пройденных шагов
-        # angle - угол, под которым летит стрела
-        self.calculate_trajectory()
-        self.image = pygame.transform.rotate(load_image(os.path.join('sprites', 'arrow.png')), self.angle)
+        self.distance_to_target = distance_to_target
+        self.mob = mob
+        if end_coords:                    # Если конечную точку дали сразу, то снаряд просто летит туда, а если нет,
+            self.end_coords = end_coords  # то конечная точка вычисляется исходя из движения моба-цели
+            self.velocity = velocity
+            self.angle = angle
+            # Путь до цели будет разбит на шаги.
+            # steps_to_target - количество шагов до цели, steps - количество пройденных шагов
+            # angle - угол, под которым летит стрела
+            self.steps = 0
+            self.steps_to_target = distance_to_target / self.velocity
+            self.step = (self.velocity * math.cos(self.angle),
+                         self.velocity * -math.sin(self.angle))
+        else:
+            self.velocity = 600 / FPS
+            self.steps, self.steps_to_target = 0, None
+            self.calculate_trajectory(mob, distance_to_target)
+        self.image = pygame.transform.rotate(BULLETS_SPRITES[self.type], math.degrees(self.angle))
 
-    def calculate_trajectory(self):
+    def calculate_trajectory(self, mob, distance_to_target):
         """Рассчитывает маршрут полёта стрелы до противника и угол, под которым полетит стрела"""
-        flight_time = self.distance_to_mob / self.velocity
-        self.end_coords = self.mob.get_position(flight_time)
+        flight_time = distance_to_target / self.velocity
+        self.end_coords = mob.get_position(flight_time)
         d_x, d_y = self.end_coords[0] - self.coords[0], self.end_coords[1] - self.coords[1]
         distance = math.hypot(d_x, d_y)
         self.velocity = distance / flight_time
@@ -327,7 +381,6 @@ class Bullet(pygame.sprite.Sprite):
         self.angle = -math.atan(d_y / d_x)
         if d_x < 0:
             self.angle += math.pi
-        self.angle = math.degrees(self.angle)
 
     def update(self):
         if self.steps < self.steps_to_target:
@@ -391,7 +444,7 @@ class AddTowerMenu(pygame.sprite.Sprite):
                 self.spawn_tower(BowTower)
 
     def spawn_tower(self, tower):
-        tower(self.coords, self.moblist, self.group_for_bullets, self.group_for_towers)
+        tower(self.group_for_towers, self.coords, self.moblist, self.group_for_bullets)
         Game.currency -= tower.cost
         self.plant.free = False
         self.plant.kill()
@@ -412,7 +465,7 @@ class MobMark(pygame.sprite.Group):
 
     def __init__(self):
         super().__init__()
-        self.image = MOB_MARK
+        self.image = MOB_MARK_SPRITE
         self.sprite = pygame.sprite.Sprite(self)
         self.sprite.rect = pygame.Rect(0, 0, 60, 60)
         self.size = 60
@@ -465,7 +518,7 @@ class Game:
         self.mt = MainTower(self.bullets, self.moblist, self.main_tower)
         self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
         self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
-
+        self.time_in_game = 0
 
     def begin(self):
         # Инициализация фоновой картинки и главного меню
@@ -516,13 +569,48 @@ class Game:
             pygame.display.flip()
 
     def start(self, save_slot):
+        self.save_slot = save_slot
         spawner_start = self.load_game_data(save_slot)
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
 
-    def load_game_data(self, save_slot):
-        if False:
-            pass
+    def load_game_data(self, save_slot_id):
+        con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
+        cur = con.cursor()
+        main_data = cur.execute('''SELECT main_tower_hp, level, play_time, currency FROM slots 
+                                   WHERE id = ?''', (save_slot_id,)).fetchone()
+        if main_data and all(map(lambda v: v is not None, main_data)):  # Если в этом слоте лежат данные
+            MainTower.health = main_data[0]
+            self.level = main_data[1]
+            self.time_in_game += main_data[2]
+            Game.currency = main_data[3]
+            towers_data = cur.execute('''SELECT * FROM towers
+                                         WHERE slot_id = ?''', (save_slot_id,)).fetchall()
+            towers = {'bow': BowTower, 'gun': GunTower, 'rocket': RocketTower}
+
+            for _, x, y, reloading, tower_type, animation_index in towers_data:
+                tower = towers[tower_type]
+                x -= 125
+                y += 25
+                tower(self.towers, (x, y), self.moblist, self.bullets, reloading, animation_index)
+                plant = {v: k for k, v in self.plants_data.items()}[(x, y)]
+                plant.free = False
+                plant.kill()
+
+            mobs_data = cur.execute('''SELECT * FROM mobs
+                                       WHERE slot_id = ?''', (save_slot_id,)).fetchall()
+            for mob_data in mobs_data:
+                mob = Mob(self.mobs[mob_data[1]], self.map.get_way(*mob_data[2:4]), *mob_data[1:])
+                self.moblist.append(mob)
+
+            bullets_data = cur.execute('''SELECT * FROM bullets
+                                          WHERE slot_id = ?''', (save_slot_id,)).fetchall()
+            for _, x, y, angle, end_x, end_y, bullet_type, velocity, damage, mob_index in bullets_data:
+                distance = math.hypot(end_x - x, end_y - y)
+                Bullet(self.bullets, (x, y), damage, bullet_type, distance, self.moblist[mob_index],
+                       end_coords=(end_x, end_y), velocity=velocity, angle=angle)
+            con.close()
+            return main_data[2]
         return 0
 
     def load_plants(self):
@@ -549,7 +637,6 @@ class Game:
                 spawn_list[0] = (interval - start, road_index, mob_type)
                 spawn_list = tuple(spawn_list)
                 break
-        print(spawn_list)
         for interval, road_index, mob_type in spawn_list:
             little_intervals_count = interval / 0.1
             little_intervals_counter = 0
@@ -557,6 +644,7 @@ class Game:
                 sleep(0.1)
                 if not self.on_pause:
                     little_intervals_counter += 1
+                    self.time_in_game += 0.1
             self.mob_query.append((mob_type, road_index))
 
     def on_click(self, pos):
@@ -589,6 +677,7 @@ class Game:
         if key == pygame.K_TAB:
             self.pause()
         elif key == pygame.K_END:
+            self.save_progress()
             self.quit()
 
     def pause(self):
@@ -617,12 +706,11 @@ class Game:
                     elif click.colliderect(music_slider):
                         changing_music_volume = True
                         volume_changing_bias = event.pos[0] - music_slider.rect.x
-                        print(volume_changing_bias)
                     elif click.colliderect(sounds_slider):
                         changing_sounds_volume = True
                         volume_changing_bias = event.pos[0] - sounds_slider.rect.x
-                        print(volume_changing_bias)
                     elif click.colliderect(exit_button):
+                        self.save_progress()
                         self.quit()
                 elif event.type == pygame.MOUSEMOTION:
                     if changing_music_volume:
@@ -653,6 +741,7 @@ class Game:
                         self.on_pause = False
                         return
                     elif event.key == pygame.K_END:
+                        self.save_progress()
                         self.quit()
                 pygame.display.flip()
 
@@ -664,7 +753,8 @@ class Game:
     def update_and_render(self):
         if self.mob_query:
             mob_type, road_index = self.mob_query.pop(-1)
-            mob = Mob(mob_type, self.map.get_way(road_index), self.mt, self.mobs[mob_type])
+            way, way_index = self.map.get_way(road_index)
+            mob = Mob(self.mobs[mob_type], way, mob_type, road_index, way_index)
             self.moblist.append(mob)
         self.map.render(self.screen)
         self.mt.update_mobslist(self.moblist)
@@ -689,6 +779,44 @@ class Game:
         for add_tower_menu in self.add_tower_menus:
             add_tower_menu.kill()
 
+    def save_progress(self):
+        con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
+        cur = con.cursor()
+        # Сохранение основной информации:
+        cur.execute('''DELETE FROM slots
+                       WHERE id = ?''', (self.save_slot,))
+        cur.execute('INSERT INTO slots VALUES (?, ?, ?, ?, ?)',
+                    (self.save_slot, self.mt.health, self.level, self.time_in_game, self.currency))
+        # Сохранение информации о мобах:
+        cur.execute('''DELETE FROM mobs
+                       WHERE slot_id = ?''', (self.save_slot,))
+        mobs_data = []
+        for mob in self.moblist:
+            if mob.state != 'death':
+                mobs_data.append((self.save_slot, mob.type, mob.road_index, mob.way_index, *mob.coords,
+                                  mob.pos, mob.state, mob.animation_index, *mob.steps, mob.health, mob.tagged))
+        if mobs_data:
+            cur.execute('INSERT INTO mobs VALUES ' + ', '.join([str(mob_data) for mob_data in mobs_data]))
+        # Сохранение информации о снарядах:
+        cur.execute('''DELETE FROM bullets
+                       WHERE slot_id = ?''', (self.save_slot,))
+        bullets_data = []
+        for bullet in self.bullets.sprites():
+            bullets_data.append((self.save_slot, *bullet.coords, bullet.angle, *bullet.end_coords, bullet.type,
+                                 bullet.velocity, bullet.damage, self.moblist.index(bullet.mob)))
+        if bullets_data:
+            cur.execute('INSERT INTO bullets VALUES ' + ', '.join([str(bullet_data) for bullet_data in bullets_data]))
+        # Сохранение информации о башнях:
+        cur.execute('''DELETE FROM towers
+                       WHERE slot_id = ?''', (self.save_slot,))
+        towers_data = []
+        for tower in self.towers.sprites():
+            towers_data.append((self.save_slot, *tower.coords, tower.reloading, str(tower), tower.animation_index))
+        if towers_data:
+            cur.execute('INSERT INTO towers VALUES ' + ', '.join([str(tower_data) for tower_data in towers_data]))
+        con.commit()
+        con.close()
+
     def quit(self):
         pygame.quit()
         sys.exit(0)
@@ -698,10 +826,11 @@ if __name__ == '__main__':
     pygame.init()
     screen = pygame.display.set_mode(SIZE)
     MOB_ANIMATIONS = load_mob_animations()
+    BULLETS_SPRITES = load_bullet_sprites()
     ADD_TOWER_MENU_IMAGE = load_image(os.path.join('sprites', 'add_tower_menu.png'))
     COIN_ICON = load_image(os.path.join('sprites', 'coin.png'))
     SMALL_COIN_ICON = pygame.transform.scale(load_image(os.path.join('sprites', 'coin.png')), (20, 20))
-    MOB_MARK = load_image(os.path.join('sprites', 'mark.png'))
+    MOB_MARK_SPRITE = load_image(os.path.join('sprites', 'mark.png'))
     CURRENCY_FONT = pygame.font.SysFont('Arial', 60)
     SMALL_FONT = pygame.font.SysFont('Arial', 25)
     game = Game(screen)
