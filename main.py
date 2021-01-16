@@ -637,10 +637,12 @@ class Game:
                 spawn_list[0] = (interval - start, road_index, mob_type)
                 spawn_list = tuple(spawn_list)
                 break
+        else:
+            spawn_list = []
         for interval, road_index, mob_type in spawn_list:
             little_intervals_count = interval / 0.1
             little_intervals_counter = 0
-            while little_intervals_counter != little_intervals_count:
+            while little_intervals_count - little_intervals_counter > 0.05:
                 sleep(0.1)
                 if not self.on_pause:
                     little_intervals_counter += 1
@@ -797,6 +799,7 @@ class Game:
                                   mob.pos, mob.state, mob.animation_index, *mob.steps, mob.health, mob.tagged))
         if mobs_data:
             cur.execute('INSERT INTO mobs VALUES ' + ', '.join([str(mob_data) for mob_data in mobs_data]))
+        self.moblist = [mob for mob in self.moblist if mob.state != 'death']
         # Сохранение информации о снарядах:
         cur.execute('''DELETE FROM bullets
                        WHERE slot_id = ?''', (self.save_slot,))
