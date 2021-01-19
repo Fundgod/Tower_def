@@ -2,17 +2,20 @@
   "move": {
     "width": 106,
     "height": 99,
-    "animation_speed": 0.2
+    "animation_speed": 0.2,
+    "animation_length": 8
   },
   "attack": {
     "width": 109,
     "height": 119,
-    "animation_speed": 0.15
+    "animation_speed": 0.15,
+    "animation_length": 6
   },
   "death": {
     "width": 121,
     "height": 116,
-    "animation_speed": 0.2
+    "animation_speed": 0.2,
+    "animation_length": 6
   },
   "health_line_bias": {
     "x": 37,

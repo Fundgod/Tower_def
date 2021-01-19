@@ -2,23 +2,26 @@
   "move": {
     "width": 60,
     "height": 72,
-    "animation_speed": 0.2
+    "animation_speed": 0.2,
+    "animation_length": 8
   },
   "attack": {
     "width": 83,
     "height": 92,
-    "animation_speed": 0.2
+    "animation_speed": 0.2,
+    "animation_length": 8
   },
   "death": {
     "width": 63,
     "height": 100,
-    "animation_speed": 0.2
+    "animation_speed": 0.2,
+    "animation_length": 6
   },
   "health_line_bias": {
     "x": 15,
     "y": 10
   },
-  "velocity": 60,
+  "velocity": 600,
   "health": 30,
   "damage": 10,
   "cost": 5

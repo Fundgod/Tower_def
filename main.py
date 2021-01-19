@@ -6,7 +6,6 @@ import json
 import math
 import sqlite3
 from threading import Thread
-from functools import partial
 from time import sleep
 from constants import *
 
@@ -56,6 +55,11 @@ def load_mob_animations():
 def load_bullet_sprites():
     path = os.path.join('sprites', 'bullets')
     return {file.split('.')[0]: load_image(os.path.join(path, file)) for file in os.listdir(path)}
+
+
+def draw_health_indicator(x, y, health, max_health, indicator_width, screen):
+    pygame.draw.rect(screen, 'red', (x, y, indicator_width, 5))
+    pygame.draw.rect(screen, 'green', (x, y, indicator_width * health / max_health, 5))
 
 
 class Map:
@@ -147,6 +151,7 @@ class Mob(pygame.sprite.Sprite):
         self.damage = self.info['damage']
         self.cost = self.info['cost']
         self.animation_speed = self.info[self.state]['animation_speed']
+        self.animation_length = self.info[self.state]['animation_length']
         self.health_line_bias = tuple(self.info['health_line_bias'].values())
 
     def get_position(self, time):
@@ -176,25 +181,17 @@ class Mob(pygame.sprite.Sprite):
             return self.way[-1]
 
     def update(self):
+        if round(self.animation_index, 1).is_integer():
+            self.image = self.animation[int(self.animation_index)]
+        self.animation_index = (self.animation_index + self.animation_speed) % self.animation_length
         if self.health > 0:
-            if round(self.animation_index, 1).is_integer():
-                self.image = self.animation[int(self.animation_index)]
-            self.animation_index = (self.animation_index + self.animation_speed) % len(self.animation)
             # Отрисовка полоски здоровья
-            pygame.draw.rect(screen, 'red',
-                             (
-                                 int(self.coords[0] - self.width / 2 + self.health_line_bias[0]),
-                                 int(self.coords[1]) - self.height / 2 - self.health_line_bias[1],
-                                 30,
-                                 5
-                             ))
-            pygame.draw.rect(screen, 'green',
-                             (
-                                 int(self.coords[0] - self.width / 2 + self.health_line_bias[0]),
-                                 int(self.coords[1]) - self.height / 2 - self.health_line_bias[1],
-                                 30 * self.health / self.max_health,
-                                 5
-                             ))
+            draw_health_indicator(int(self.coords[0] - self.width / 2 + self.health_line_bias[0]),
+                                  int(self.coords[1] - self.height / 2 - self.health_line_bias[1]),
+                                  self.health,
+                                  self.max_health,
+                                  30,
+                                  screen)
             try:
                 if self.steps[0] >= self.steps[1]:
                     start_point = self.way[self.pos]
@@ -209,18 +206,21 @@ class Mob(pygame.sprite.Sprite):
                 self.coords[1] += self.y_velocity
                 self.rect.x, self.rect.y = self.coords[0] - self.width / 2, self.coords[1] - self.height / 2
             except IndexError:
-                self.attack()
-        else:
+                self.attack(MainTower)
+        elif self.state != 'death':
             self.kill()
+        elif round(self.animation_index) == self.animation_length:
+            super().kill()
 
-    def attack(self):
+    def attack(self, target):
         attack_animation = self.animations['attack']
-        if int(self.animation_index) == len(attack_animation) - 1:
-            MainTower.health -= self.damage
-        if self.animation != attack_animation:
+        if int(self.animation_index) == self.animation_length - 1:
+            target.hit(self.damage)
+        if self.state != 'attack':
             self.state = 'attack'
             self.animation = attack_animation
             self.animation_speed = self.info['attack']['animation_speed']
+            self.animation_length = self.info['attack']['animation_length']
             self.animation_index = 0 - self.animation_speed
             self.width, self.height = self.info['attack']['width'], self.info['attack']['height']
 
@@ -230,20 +230,11 @@ class Mob(pygame.sprite.Sprite):
     def kill(self):
         self.state = 'death'
         Game.currency += self.cost
-
-        def new_update(self):
-            try:
-                if round(self.animation_index, 1).is_integer():
-                    self.image = self.animation[int(self.animation_index)]
-                self.animation_index += self.animation_speed
-            except IndexError:
-                super().kill()
-
         self.animation = self.animations['death']
         self.animation_index = 0.
         self.animation_speed = self.info['death']['animation_speed']
+        self.animation_length = self.info['death']['animation_length']
         self.width, self.height = self.info['death']['width'], self.info['death']['height']
-        self.update = partial(new_update, self)
 
 
 class Button(pygame.sprite.Sprite):
@@ -304,7 +295,8 @@ class RocketTower(pygame.sprite.Sprite):
 
 
 class MainTower(pygame.sprite.Sprite):
-    health, full_hp = 1000, 1000
+    health = 1000
+    full_hp = 1000
 
     def __init__(self, bullets_group, moblist,  group):
         super().__init__(group)
@@ -315,11 +307,8 @@ class MainTower(pygame.sprite.Sprite):
         self.bullets_group = bullets_group
         self.reloading = 0
         self.time_to_reload = 60
-        self.shooting_range = 400
-        self.damage = 20
-
-    def update_mobslist(self, moblist):
-        self.moblist = moblist
+        self.shooting_range = 600
+        self.damage = 10
 
     def update(self):
         if self.health > 0:
@@ -327,7 +316,7 @@ class MainTower(pygame.sprite.Sprite):
             pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
         else:
             self.kill()
-            # здесь по идеи должна поменяться картинка, а не башня должа испариться, но картинки ещё нет
+            # здесь по идее должна поменяться картинка, а не башня должа испариться, но картинки ещё нет
 
         if not self.reloading:
             for mob in self.moblist:
@@ -339,6 +328,9 @@ class MainTower(pygame.sprite.Sprite):
                     return
         else:
             self.reloading -= 1
+
+    def hit(damage):
+        MainTower.health -= damage
 
 
 class Bullet(pygame.sprite.Sprite):
@@ -753,13 +745,15 @@ class Game:
         self.screen.blit(currency_text, (130, 40))
 
     def update_and_render(self):
+        # Спавн мобов
         if self.mob_query:
             mob_type, road_index = self.mob_query.pop(-1)
             way, way_index = self.map.get_way(road_index)
             mob = Mob(self.mobs[mob_type], way, mob_type, road_index, way_index)
             self.moblist.append(mob)
+        # Отрисовка карты
         self.map.render(self.screen)
-        self.mt.update_mobslist(self.moblist)
+        # Обновление и отрисовка игровых объектов
         self.main_tower.update()
         self.main_tower.draw(self.screen)
         for mob_type in (HORNY_DOG, BOAR_WARRIOR, SKILLET, CRYSTAL_GOLEM, STONE_GOLEM, MASK):
@@ -838,8 +832,8 @@ if __name__ == '__main__':
     SMALL_FONT = pygame.font.SysFont('Arial', 25)
     game = Game(screen)
     game.begin()
-    time = pygame.time.Clock()
     running = True
+    time = pygame.time.Clock()
     while running:
         time.tick(FPS)
         for event in pygame.event.get():
@@ -847,6 +841,9 @@ if __name__ == '__main__':
                 game.on_click(event.pos)
             if event.type == pygame.KEYDOWN:
                 game.on_tap(event.key)
+            elif event.type == pygame.QUIT:
+                break
         screen.fill('black')
         game.update_and_render()
         pygame.display.flip()
+    pygame.quit()

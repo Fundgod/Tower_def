@@ -1,5 +1,6 @@
 SIZE = WIDTH, HEIGHT = 1920, 1080
 FPS = 60
+TICK = 1 / 60
 MASK = 'mask'
 SKILLET = 'skillet'
 STONE_GOLEM = 'stone_golem'
