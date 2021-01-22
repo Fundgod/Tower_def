@@ -25,6 +25,15 @@ def load_image(name, colorkey=None):
     return image
 
 
+def fade(screen, image, w, h, coords=(0, 0)):
+    image = pygame.transform.scale(image, (w, h))
+    for alpha in range(0, 300):
+        image.set_alpha(alpha)
+        screen.blit(image, coords)
+        pygame.display.update()
+        pygame.time.delay(5)
+
+
 def load_animation(path_to_image, width, height):
     image = load_image(os.path.join(path_to_image))
     x, y = image.get_size()
@@ -401,6 +410,30 @@ class Game:
         self.moblist = []
         self.mt = MainTower(self.bullets, self.moblist, self.main_tower)
 
+    def load_screen(self):
+
+        def load_frame(num):
+            name = f'0 ({num}).png'
+            return load_image(os.path.join('Loading_screen', name))
+
+        num_of_frame = 1
+        time = pygame.time.Clock()
+        playing = True
+        load_sound = pygame.mixer.Sound(os.path.join('sounds', 'Snake_load_sound.mp3'))
+        load_sound.play()
+
+        while playing:
+            time.tick(FPS)
+            for event in pygame.event.get():
+                pass
+            if num_of_frame == 280:
+                playing = False
+            screen.blit(load_frame(num_of_frame), (0, 0))
+            num_of_frame += 1
+            pygame.display.flip()
+
+        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080)
+
     def begin(self):
         # Инициализация фоновой картинки и кнопок
         background = load_image(os.path.join('sprites', 'background_image.png'))
@@ -578,6 +611,7 @@ if __name__ == '__main__':
     MOB_ANIMATIONS = load_mob_animations()
     ADD_TOWER_MENU_IMAGE = load_image(os.path.join('sprites', 'add_tower_menu.png'))
     game = Game(screen)
+    game.load_screen()
     game.begin()
     time = pygame.time.Clock()
     running = True
