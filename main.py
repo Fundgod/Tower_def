@@ -25,9 +25,9 @@ def load_image(name, colorkey=None):
     return image
 
 
-def fade(screen, image, w, h, coords=(0, 0)):
+def fade(screen, image, w, h, coords=(0, 0), fade_level=300):
     image = pygame.transform.scale(image, (w, h))
-    for alpha in range(0, 300):
+    for alpha in range(0, fade_level):
         image.set_alpha(alpha)
         screen.blit(image, coords)
         pygame.display.update()
@@ -187,7 +187,7 @@ class Mob(pygame.sprite.Sprite):
     def attack(self):
         self.cnt += 1
         if self.cnt % 60 == 0:
-            self.main_tower.health -= 12
+            self.main_tower.health -= 100
         attack_animation = self.animations['attack']
         if self.animation != attack_animation:
             self.animation = attack_animation
@@ -359,7 +359,7 @@ class MainTower(pygame.sprite.Sprite):
         self.reloading = 0
         self.time_to_reload = 60
         self.shooting_range = 400
-        self.damage = 20
+        self.damage = 2
 
     def update_mobslist(self, mobslist):
         self.moblist = mobslist
@@ -435,6 +435,9 @@ class Game:
         fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080)
 
     def begin(self):
+        # Фоновая музыка меню
+        background_menu_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_sound.mp3'))
+        background_menu_sound.play()
         # Инициализация фоновой картинки и кнопок
         background = load_image(os.path.join('sprites', 'background_image.png'))
         buttons = pygame.sprite.Group()
@@ -449,6 +452,10 @@ class Game:
                     click = pygame.Rect(*event.pos, 1, 1)
                     if click.colliderect(single_player_button):
                         self.start()
+                        for i in range(0, 10):
+                            background_menu_sound.set_volume(1 - 0.1 * i)
+                            sleep(0.1)
+                        background_menu_sound.stop()
                         return
                     elif click.colliderect(exit_button):
                         self.quit()
@@ -458,8 +465,27 @@ class Game:
             pygame.display.flip()
 
     def start(self):
+        # Мелодия боя
+        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.mp3'))
+        self.background_fight_sound.set_volume(0)
+        self.background_fight_sound.play()
+        for i in range(0, 3):
+            self.background_fight_sound.set_volume(0 + 0.1 * i)
+            sleep(0.1)
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
         self.mobs_spawn_thread.start()
+
+    def game_over(self):
+        for i in range(0, 3):
+            self.background_fight_sound.set_volume(0 - 0.1 * i)
+            sleep(0.1)
+        self.background_fight_sound.stop()
+        semi_black_screen = pygame.Surface((1920, 1080))
+        semi_black_screen.fill('black')
+        fade(self.screen, semi_black_screen, 1920, 1080, fade_level=150)
+        fade(self.screen, load_image(os.path.join('sprites', 'Game_over.png')), 800, 827, coords=(560, 170), fade_level=500)
+        sleep(4)
+        self.begin()
 
     def load_plants(self):
         plants_data = []
@@ -580,6 +606,10 @@ class Game:
             mob = Mob(mob_type, self.map.get_way(road_num), self.mt, self.mobs[mob_type])
             self.moblist.append(mob)
         self.map.render(self.screen)
+        if self.mt.health < 0:
+            self.on_pause = True
+            self.mt.health = self.mt.full_hp
+            self.game_over()
         self.mt.update_mobslist(self.moblist)
         self.main_tower.update()
         self.main_tower.draw(self.screen)
