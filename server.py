@@ -10,18 +10,14 @@ import pickle
 from constants import *
 
 
-PLAYER_1 = 1
-PLAYER_2 = 2
-
-
 def opponent(player):
     if player == PLAYER_1:
         return PLAYER_2
     return PLAYER_1
 
 
-server = "0.0.0.0"  # "192.168.20.36"  # "127.0.0.1"
-port = 44444
+server = "0.0.0.0"
+port = 444
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -31,51 +27,76 @@ except socket.error:
     print('Socket error')
     sys.exit(1)
 
-s.listen(2)
+s.listen(7)
 print('Waiting for connection')
 
 
-def client_processing(conn, player):
-    conn.send(pickle.dumps(player))
-    while True:
-        try:
-            data = conn.recv(1024).decode().split()
-            if not data:
-                print('disconnected')
-                break
-            elif len(data) > 1:
-                game.get_player_action(player, data[0], data[1:])
-            conn.sendall(game.data_to_send)
-            conn.sendall(b"")
-        except Exception as err:
-            print('Error:', err)
-            break
+class Room:
+    def __init__(self, player_1_connection):
+        self.player_1 = (PLAYER_1, player_1_connection)
+        self.player_2 = None
+        self.game = OnlineGame()
 
-    print('connection is lost')
-    conn.close()
+    def add_player(self, player_2_connection):
+        self.player_2 = (PLAYER_2, player_2_connection)
+
+    def start_game(self):
+        Thread(target=self.game.start).start()
+
+    def is_full(self):
+        if self.player_2 is not None:
+            return True
+        return False
+
+    def close(self):
+        self.player_1[1].close()
+        if self.player_2 is not None:
+            self.player_2[1].close()
 
 
 def clients_accepting():
-    players = []
+    rooms = []
     while True:
         conn, addr = s.accept()
-
         print(f'Connected to {addr}')
-        if len(players) < 2:
-            if len(players) == 1:
-                if players[0] == 1:
-                    player_number = 2
-                    players.append(player_number)
-                else:  # players = [1]
-                    player_number = 1
-                    players.insert(1, player_number)
-            else:  # len(players) = 0
-                player_number = 1
-                players.append(player_number)
-            Thread(target=client_processing, args=[conn, player_number]).start()
+        if rooms and not rooms[-1].is_full() == 1:
+            room = rooms[-1]
+            room.add_player(conn)
+            Thread(target=client_processing, args=[conn, PLAYER_2, room]).start()
+            room.start_game()
+        elif len(rooms) < 3:
+            room = Room(conn)
+            rooms.append(room)
+            Thread(target=client_processing, args=[conn, PLAYER_1, room]).start()
         else:
-            conn.sendall(bytes('abort'))
+            conn.sendall(str.encode('abort'))
             conn.close()
+
+
+def client_processing(conn, player, room):
+    game = room.game
+    try:
+        conn.send(pickle.dumps(player))
+        while True:
+            try:
+                data = conn.recv(1024).decode().split()
+                if not data:
+                    print('disconnected')
+                    break
+                elif len(data) > 1:
+                    game.get_player_action(player, data[0], data[1:])
+                conn.sendall(game.data_to_send)
+                conn.sendall(b"")
+            except Exception as err:
+                print('Error:', err)
+                break
+
+        print('connection is lost')
+        conn.close()
+        room.close()
+    except:
+        conn.close()
+        room.close()
 
 
 def load_ways():
@@ -95,41 +116,31 @@ def load_ways():
 
 
 class Mob:
-    def __init__(self, player, type, coords):
+    def __init__(self, player, type, road_index, coords, opponent_main_tower):
         self.player = player
         self.type = type
+        self.road = road_index
         self.coords = list(coords)
-        self.way = self.define_way(self.coords)
+        self.opponent_main_tower = opponent_main_tower
+        self.way = self.define_way()
+        #self.way, self.road = self.define_way(self.coords)
         self.pos = 0
-        self.state = 'move'
         self.load_info(self.type)
-        self.resize('move')
-        self.animation_index = 0.
+        self.set_state('move')
         self.steps = [0, 0]
         self.tagged = False
         self.target = None
-        self.killed = False
 
-    def define_way(self, coords):
-        x, y = coords
-        if x < WIDTH / 3:
-            road = 0
-        elif x > WIDTH / 3 * 2:
-            road = 2
-        else:
-            road = 1
-        # FIXME
-        road = 0
-        way = WAYS[road][random.randint(0, 1)]
+    def define_way(self):
+        way = (P_1_WAYS if self.player == PLAYER_1 else P_2_WAYS)[self.road][random.randint(0, 1)]
+        # Далее определяется точка с которой начинается путь:
         if self.player == 1:
-            way = way[::-1]
-            for index, point in enumerate(way):
-                if point[0] > x:
-                    return tuple([coords] + list(way[index:]))
-        else:  # self.player == 2:
-            for index, point in enumerate(way):
-                if point[0] < x:
-                    return tuple([coords] + list(way[index:]))
+            direction = 1
+        else:
+            direction = -1
+        for index, point in enumerate(way):
+            if (point[0] - self.coords[0]) * direction > 100:
+                return tuple([self.coords] + list(way[index:]))
 
     def load_info(self, type):
         with open(os.path.join('mobs', type, 'info.json'), 'r', encoding='utf-8') as info_file:
@@ -138,8 +149,18 @@ class Mob:
         self.health = self.max_health = self.info['health']
         self.damage = self.info['damage']
         self.cost = self.info['cost']
-        self.animation_speed = self.info[self.state]['animation_speed']
-        self.animation_length = self.info[self.state]['animation_length']
+
+    def set_state(self, state):
+        self.state = state
+        self.half_width = self.info[self.state]['width'] / 2
+        self.half_height = self.info[self.state]['height'] / 2
+        self.animation_speed = self.info[state]['animation_speed']
+        self.animation_length = self.info[state]['animation_length']
+        self.animation_index = 0.
+
+    def get_coords(self):
+        return (self.coords[0] - self.half_width,
+                self.coords[1] - self.half_height)
 
     def get_position(self, time):
         """Возвращает координату, в которой окажется моб через заданное кол-во обновлений экрана"""
@@ -169,7 +190,9 @@ class Mob:
 
     def update(self):
         self.animation_index = (self.animation_index + self.animation_speed) % self.animation_length
-        if self.state == 'move' and self.health > 0:
+        if self.health <= 0 and self.state != 'death':
+            self.set_state('death')
+        if self.state == 'move':
             try:
                 if self.steps[0] >= self.steps[1]:
                     start_point = self.way[self.pos]
@@ -185,51 +208,23 @@ class Mob:
                 self.coords[0] += self.x_velocity
                 self.coords[1] += self.y_velocity
             except IndexError:
-                self.attack(game.main_towers[opponent(self.player)])
-        elif self.state == 'attack' and int(self.animation_index) == self.animation_length - 1:
-            self.target.hit(self.damage)
-            if self.target.health <= 0:
-                self.target = None
-                self.state = 'move'
-                self.resize('move')
-                self.animation_speed = self.info['move']['animation_speed']
-                self.animation_index = 0 - self.animation_speed
-                self.animation_length = self.info['move']['animation_length']
-        elif self.state != 'death' and self.health <= 0:
-            self.kill()
+                self.attack(self.opponent_main_tower)
+        elif self.state == 'attack':
+            if int(self.animation_index) == self.animation_length - 1:
+                self.target.hit(self.damage)
+                if self.target.health <= 0:
+                    self.target = None
+                    self.set_state('move')
         elif self.state == 'death' and round(self.animation_index) == self.animation_length:
-            self.killed = True
-
-    def resize(self, state):
-        """У разных анимаций разные размерыб поэтому каждый раз когда измеяется анимация нужно менять размер моба"""
-        try:
-            self.coords[0] += self.width / 2
-            self.coords[1] += self.health / 2
-        except AttributeError:
-            pass
-        self.width = self.info[state]['width']
-        self.height = self.info[state]['height']
-        self.coords[0] -= self.width / 2
-        self.coords[1] -= self.health / 2
+            self.state = 'killed'
 
     def attack(self, target):
         if self.state != 'attack':
             self.target = target
-            self.state = 'attack'
-            self.resize('attack')
-            self.animation_speed = self.info['attack']['animation_speed']
-            self.animation_index = 0 - self.animation_speed
-            self.animation_length = self.info['attack']['animation_length']
+            self.set_state('attack')
 
     def hit(self, damage):
         self.health -= damage
-
-    def kill(self):
-        self.state = 'death'
-        self.resize('death')
-        self.animation_index = 0.
-        self.animation_length = self.info[self.state]['animation_length']
-        self.animation_speed = self.info['death']['animation_speed']
 
 
 class BowTower:
@@ -244,6 +239,9 @@ class BowTower:
         self.time_to_reload = 100
         self.shooting_range = 600
         self.damage = 10
+
+    def get_coords(self):
+        return self.coords[0] - 125, self.coords[1] - 25
 
     def update(self):
         if not self.reloading:
@@ -282,9 +280,9 @@ class MainTower:
         self.player = player
         self.game = game
         if player == PLAYER_1:
-            self.coords = (20, 500)
+            self.coords = (98, 462)
         else:  # player == PLAYER_2
-            self.coords = (1900, 500)
+            self.coords = (1828, 470)
         self.reloading = 0
         self.time_to_reload = 60
         self.shooting_range = 600
@@ -319,6 +317,8 @@ class Bullet:
         self.velocity = 600 / FPS
         self.steps, self.steps_to_target = 0, None
         self.calculate_trajectory(mob, distance_to_target)
+        self.animation_index = 0.
+        self.killed = False
 
     def calculate_trajectory(self, mob, distance_to_target):
         """Рассчитывает маршрут полёта стрелы до противника и угол, под которым полетит стрела"""
@@ -333,6 +333,7 @@ class Bullet:
         self.angle = -math.atan(d_y / d_x)
         if d_x < 0:
             self.angle += math.pi
+        self.angle = math.degrees(self.angle)
 
     def update(self):
         if self.steps < self.steps_to_target:
@@ -341,28 +342,30 @@ class Bullet:
             self.steps += 1
         else:
             self.mob.hit(self.damage)
-            del self
+            self.killed = True
 
 
 class OnlineGame:
-    players_cache = {
-        PLAYER_1: 100,
-        PLAYER_2: 100
-    }
-
     def __init__(self):
-        self.mobs = {
-            PLAYER_1: [],
-            PLAYER_2: []
-        }
         self.main_towers = {
             PLAYER_1: MainTower(PLAYER_1, self),
             PLAYER_2: MainTower(PLAYER_2, self)
         }
-        self.towers = []
+        self.players_cache = {
+            PLAYER_1: 100,
+            PLAYER_2: 100
+        }
+        self.mobs = {
+            PLAYER_1: [],
+            PLAYER_2: []
+        }
+        self.towers = {
+            PLAYER_1: [],
+            PLAYER_2: []
+        }
         self.bullets = []
         self.action_query = []
-        self.data_to_send = None
+        self.data_to_send = pickle.dumps('Waiting for players')
 
     def start(self):
         while True:
@@ -373,58 +376,73 @@ class OnlineGame:
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
+    def let_mobs_fight(self, mob1, mob2):
+        y = (mob1.coords[1] + mob2.coords[1]) / 2
+        mob1.coords[1] = y
+        mob2.coords[1] = y
+        mob1.attack(mob2)
+        mob2.attack(mob1)
+
     def update(self):
         if self.action_query:
             self.handle_player_action(*self.action_query.pop(-1))
         for mob in self.mobs[PLAYER_1]:
-            if mob.killed:
-                self.mobs[PLAYER_1].remove(mob)
-                continue
             mob.update()
+            if mob.state == 'killed':
+                self.mobs[PLAYER_1].remove(mob)
         for mob in self.mobs[PLAYER_2]:
-            if mob.killed:
+            mob.update()
+            if mob.state == 'killed':
                 self.mobs[PLAYER_2].remove(mob)
                 continue
-            mob.update()
             x, y = mob.coords
             for opponent_mob in self.mobs[PLAYER_1]:
                 x1, y1 = opponent_mob.coords
-                if math.hypot(x - x1, y - y1) < 80:
+                if opponent_mob.road == mob.road and abs(x - x1) < 80:
                     states = {mob.state, opponent_mob.state}
-                    if y != y1 and 'move' in states and 'death' not in states:
-                        y = (y + y1) / 2
-                        mob.coords[1] = y
-                        opponent_mob.coords[1] = y
-                        mob.attack(opponent_mob)
-                        opponent_mob.attack(mob)
-        for tower in self.towers:
+                    if 0 < abs(y - y1) < 200 and 'move' in states and 'death' not in states:
+                        self.let_mobs_fight(mob, opponent_mob)
+        for tower in self.towers[PLAYER_1] + self.towers[PLAYER_2]:
             tower.update()
+        self.main_towers[PLAYER_1].update()
+        self.main_towers[PLAYER_2].update()
         for bullet in self.bullets:
             bullet.update()
+            if bullet.killed:
+                self.bullets.remove(bullet)
+        self.players_cache[PLAYER_1] += CACHE_VELOCITY
+        self.players_cache[PLAYER_2] += CACHE_VELOCITY
 
     def update_sending_data(self):
         mobs_data = []
-        for mob in self.mobs[1] + self.mobs[2]:
-            mobs_data.append((mob.player, mob.type, mob.coords, mob.state, int(mob.animation_index), mob.health))
+        for mob in self.mobs[PLAYER_1] + self.mobs[PLAYER_2]:
+            mobs_data.append((mob.player, mob.type, mob.get_coords(), mob.state, int(mob.animation_index), mob.health))
         towers_data = []
-        for tower in self.towers:
-            towers_data.append((tower.player, tower.type, tower.coords, int(tower.animation_index)))
+        for tower in self.towers[PLAYER_1] + self.towers[PLAYER_2]:
+            towers_data.append((tower.player, str(tower), tower.get_coords(), int(tower.animation_index)))
         bullets_data = []
         for bullet in self.bullets:
-            bullets_data.append((bullet.type, bullet.coords, bullet.angle))
+            bullets_data.append((bullet.type, bullet.coords, bullet.angle, int(bullet.animation_index)))
         self.data_to_send = pickle.dumps((tuple(mobs_data), tuple(towers_data), tuple(bullets_data),
-                                          self.main_towers[1].health, self.main_towers[2].health))
+                                          self.main_towers[1].health, self.main_towers[2].health,
+                                          int(self.players_cache[PLAYER_1]), int(self.players_cache[PLAYER_2])))
 
     def handle_player_action(self, player, action, data):
         if action == 'spawn_mob':
             mob_type = data[0]
-            coords = tuple(map(int, data[1].split(';')))
-            if (player == 1 and coords[0] < WIDTH / 4) or (player == 2 and coords[0] > WIDTH / 4 * 3):
-                self.mobs[player].append(Mob(player, mob_type, coords))
+            road_index = int(data[1])
+            coords = tuple(map(int, data[2].split(';')))
+            mob = Mob(player, mob_type, road_index, coords, self.main_towers[opponent(player)])
+            if self.players_cache[player] >= mob.cost:
+                if ((player == 1 and coords[0] < WIDTH / 4) or (player == 2 and coords[0] > WIDTH / 4 * 3)):
+                    self.mobs[player].append(mob)
+                    self.players_cache[player] -= mob.cost
         elif action == 'spawn_tower':
-            tower_type, coords = data
+            tower_type = data[0]
+            coords = tuple(map(int, data[1].split(';')))
             tower = {'bow': BowTower, 'gun': GunTower, 'rocket': RocketTower}[tower_type]
-            self.towers.append(tower(player, coords, self))
+            self.towers[player].append(tower(player, coords, self))
+            self.players_cache[player] -= tower.cost
         else:  # action == 'mark_mob'
             for mob in self.mobs[player]:
                 mob.tagged = False
@@ -439,8 +457,9 @@ class OnlineGame:
 
 
 if __name__ == '__main__':
-    WAYS = load_ways()
+    P_2_WAYS = load_ways()
+    P_1_WAYS = [[ways[::-1] for ways in road] for road in P_2_WAYS]
     clients_accepting_thread = Thread(target=clients_accepting)
     clients_accepting_thread.start()
-    game = OnlineGame()
-    game.start()
+    #game = OnlineGame()
+    #game.start()

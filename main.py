@@ -52,14 +52,17 @@ def load_mob_animations():
     return animations
 
 
-def load_bullet_sprites():
+def load_bullets_sprites():
+    bullets_sprites = {}
     path = os.path.join('sprites', 'bullets')
-    return {file.split('.')[0]: load_image(os.path.join(path, file)) for file in os.listdir(path)}
+    for bullet, width, height in (('arrow', 25, 25), ('shell', 25, 25)):
+        bullets_sprites[bullet] = load_animation(os.path.join(path, bullet + '.png'), width, height)
+    return bullets_sprites
 
 
-def draw_health_indicator(x, y, health, max_health, indicator_width, screen):
-    pygame.draw.rect(screen, 'red', (x, y, indicator_width, 5))
-    pygame.draw.rect(screen, 'green', (x, y, indicator_width * health / max_health, 5))
+def draw_health_indicator(x, y, health, max_health, indicator_width, indicator_height, screen):
+    pygame.draw.rect(screen, 'red', (x, y, indicator_width, indicator_height))
+    pygame.draw.rect(screen, 'green', (x, y, indicator_width * health / max_health, indicator_height))
 
 
 class Map:
@@ -191,6 +194,7 @@ class Mob(pygame.sprite.Sprite):
                                   self.health,
                                   self.max_health,
                                   30,
+                                  5,
                                   screen)
             try:
                 if self.steps[0] >= self.steps[1]:
@@ -237,13 +241,6 @@ class Mob(pygame.sprite.Sprite):
         self.width, self.height = self.info['death']['width'], self.info['death']['height']
 
 
-class Button(pygame.sprite.Sprite):
-    def __init__(self, coords, filename, group=None):
-        super().__init__(group)
-        self.rect = pygame.Rect(*coords)
-        self.image = load_image(os.path.join('sprites', 'buttons', filename))
-
-
 class BowTower(pygame.sprite.Sprite):
     cost = 50
 
@@ -259,7 +256,7 @@ class BowTower(pygame.sprite.Sprite):
         self.height = 250
         self.shooting_range = 600
         self.damage = 10
-        self.image = load_image(os.path.join('sprites', 'towers', 'bow_tower.png'), -1)
+        self.image = load_image(os.path.join('sprites', 'towers', 'bow.png'), -1)
         self.rect = pygame.Rect(self.coords[0] - self.width // 2,
                                 self.coords[1] - self.height // 2 + 100,
                                 self.width,
@@ -302,7 +299,7 @@ class MainTower(pygame.sprite.Sprite):
         super().__init__(group)
         self.rect = pygame.Rect(20, 670, 10, 10)
         self.coords = (20, 670)
-        self.image = pygame.transform.scale(load_image(os.path.join('sprites', 'main_1_0.png'), -1), (300, 300))
+        self.image = MAINTOWER_IMAGE
         self.moblist = moblist
         self.bullets_group = bullets_group
         self.reloading = 0
@@ -312,8 +309,10 @@ class MainTower(pygame.sprite.Sprite):
 
     def update(self):
         if self.health > 0:
-            pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.full_hp // 100, 5))
-            pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
+            pygame.draw.rect(screen, 'blue', (int(self.coords[0] + 95), int(self.coords[1]) + 25, 110, 20))
+            draw_health_indicator(int(self.coords[0] + 100), int(self.coords[1]) + 30, self.health, self.full_hp, 100, 10, screen)
+            #pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.full_hp // 100, 5))
+            #pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
         else:
             self.kill()
             # здесь по идее должна поменяться картинка, а не башня должа испариться, но картинки ещё нет
@@ -358,7 +357,7 @@ class Bullet(pygame.sprite.Sprite):
             self.velocity = 600 / FPS
             self.steps, self.steps_to_target = 0, None
             self.calculate_trajectory(mob, distance_to_target)
-        self.image = pygame.transform.rotate(BULLETS_SPRITES[self.type], math.degrees(self.angle))
+        self.image = pygame.transform.rotate(BULLETS_SPRITES[self.type][0], math.degrees(self.angle))
 
     def calculate_trajectory(self, mob, distance_to_target):
         """Рассчитывает маршрут полёта стрелы до противника и угол, под которым полетит стрела"""
@@ -390,9 +389,9 @@ class AddTowerMenu(pygame.sprite.Sprite):
     width = 400
     height = 180
 
-    def __init__(self, coords, plant, moblist, currency, group_for_towers, group_for_bullets, group):
+    def __init__(self, plant, moblist, currency, group_for_towers, group_for_bullets, group):
         super().__init__(group)
-        self.coords = coords
+        self.coords = plant.rect.x, plant.rect.y
         self.plant = plant
         self.moblist = moblist
         self.group_for_towers = group_for_towers
@@ -452,6 +451,13 @@ class AddTowerMenu(pygame.sprite.Sprite):
         surface.blit(SMALL_COIN_ICON, (self.coords[0] + 250, costs_height))
 
 
+class Button(pygame.sprite.Sprite):
+    def __init__(self, rect, filename, group=None):
+        super().__init__(group)
+        self.rect = pygame.Rect(*rect)
+        self.image = load_image(os.path.join('sprites', 'buttons', filename))
+
+
 class MobMark(pygame.sprite.Group):
     """Класс крестика, который появляется на экране если кликнуть по мобу"""
 
@@ -496,8 +502,7 @@ class Game:
             HORNY_DOG: pygame.sprite.Group(),
             CRYSTAL_GOLEM: pygame.sprite.Group()
         }
-        self.plants = pygame.sprite.Group()
-        self.plants_data = self.load_plants()
+        self.plants = self.load_plants()
         self.towers = pygame.sprite.Group()
         self.bullets = pygame.sprite.Group()
         self.buttons = pygame.sprite.Group()
@@ -511,6 +516,59 @@ class Game:
         self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
         self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
         self.time_in_game = 0
+
+    def load_game_data(self, save_slot_id):
+        con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
+        cur = con.cursor()
+        main_data = cur.execute('''SELECT main_tower_hp, level, play_time, currency FROM slots 
+                                   WHERE id = ?''', (save_slot_id,)).fetchone()
+        if main_data and all(map(lambda v: v is not None, main_data)):  # Если в этом слоте лежат данные
+            MainTower.health = main_data[0]
+            self.level = main_data[1]
+            self.time_in_game += main_data[2]
+            Game.currency = main_data[3]
+            towers_data = cur.execute('''SELECT * FROM towers
+                                         WHERE slot_id = ?''', (save_slot_id,)).fetchall()
+            towers = {'bow': BowTower, 'gun': GunTower, 'rocket': RocketTower}
+
+            for _, x, y, reloading, tower_type, animation_index in towers_data:
+                tower = towers[tower_type]
+                x -= 125
+                y += 25
+                tower(self.towers, (x, y), self.moblist, self.bullets, reloading, animation_index)
+                for plant in self.plants:
+                    if plant.rect.x == x and plant.rect.y == y:
+                        break
+                plant.free = False
+                plant.kill()
+
+            mobs_data = cur.execute('''SELECT * FROM mobs
+                                       WHERE slot_id = ?''', (save_slot_id,)).fetchall()
+            for mob_data in mobs_data:
+                mob = Mob(self.mobs[mob_data[1]], self.map.get_way(*mob_data[2:4]), *mob_data[1:])
+                self.moblist.append(mob)
+
+            bullets_data = cur.execute('''SELECT * FROM bullets
+                                          WHERE slot_id = ?''', (save_slot_id,)).fetchall()
+            for _, x, y, angle, end_x, end_y, bullet_type, velocity, damage, mob_index in bullets_data:
+                distance = math.hypot(end_x - x, end_y - y)
+                Bullet(self.bullets, (x, y), damage, bullet_type, distance, self.moblist[mob_index],
+                       end_coords=(end_x, end_y), velocity=velocity, angle=angle)
+            con.close()
+            return main_data[2]
+        return 0
+
+    def load_plants(self):
+        plants = pygame.sprite.Group()
+        plant_image = load_image('sprites/plant.png')
+        with open(os.path.join(self.map.dir, 'plants.csv'), 'r') as f:
+            for line in f.readlines():
+                plant_coords = tuple(map(lambda coord: float(coord) - 125, line.rstrip().split(';')))
+                plant_sprite = pygame.sprite.Sprite(plants)
+                plant_sprite.rect = pygame.Rect(*plant_coords, 250, 250)
+                plant_sprite.image = plant_image
+                plant_sprite.free = True
+        return plants
 
     def begin(self):
         # Инициализация фоновой картинки и главного меню
@@ -566,61 +624,8 @@ class Game:
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
 
-    def load_game_data(self, save_slot_id):
-        con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
-        cur = con.cursor()
-        main_data = cur.execute('''SELECT main_tower_hp, level, play_time, currency FROM slots 
-                                   WHERE id = ?''', (save_slot_id,)).fetchone()
-        if main_data and all(map(lambda v: v is not None, main_data)):  # Если в этом слоте лежат данные
-            MainTower.health = main_data[0]
-            self.level = main_data[1]
-            self.time_in_game += main_data[2]
-            Game.currency = main_data[3]
-            towers_data = cur.execute('''SELECT * FROM towers
-                                         WHERE slot_id = ?''', (save_slot_id,)).fetchall()
-            towers = {'bow': BowTower, 'gun': GunTower, 'rocket': RocketTower}
-
-            for _, x, y, reloading, tower_type, animation_index in towers_data:
-                tower = towers[tower_type]
-                x -= 125
-                y += 25
-                tower(self.towers, (x, y), self.moblist, self.bullets, reloading, animation_index)
-                plant = {v: k for k, v in self.plants_data.items()}[(x, y)]
-                plant.free = False
-                plant.kill()
-
-            mobs_data = cur.execute('''SELECT * FROM mobs
-                                       WHERE slot_id = ?''', (save_slot_id,)).fetchall()
-            for mob_data in mobs_data:
-                mob = Mob(self.mobs[mob_data[1]], self.map.get_way(*mob_data[2:4]), *mob_data[1:])
-                self.moblist.append(mob)
-
-            bullets_data = cur.execute('''SELECT * FROM bullets
-                                          WHERE slot_id = ?''', (save_slot_id,)).fetchall()
-            for _, x, y, angle, end_x, end_y, bullet_type, velocity, damage, mob_index in bullets_data:
-                distance = math.hypot(end_x - x, end_y - y)
-                Bullet(self.bullets, (x, y), damage, bullet_type, distance, self.moblist[mob_index],
-                       end_coords=(end_x, end_y), velocity=velocity, angle=angle)
-            con.close()
-            return main_data[2]
-        return 0
-
-    def load_plants(self):
-        plants_data = []
-        plant_image = load_image('sprites/plant.png')
-        with open(os.path.join(self.map.dir, 'plants.csv'), 'r') as f:
-            for line in f.readlines():
-                plants_data.append(tuple(map(lambda coord: float(coord) - 125, line.rstrip().split(';'))))
-                plant_sprite = pygame.sprite.Sprite(self.plants)
-                plant_sprite.rect = pygame.Rect(*plants_data[-1], 250, 250)
-                plant_sprite.image = plant_image
-                plant_sprite.free = True
-                plants_data[-1] = (plant_sprite, plants_data[-1])
-        plants_data = dict(plants_data)
-        return plants_data
-
     def spawn_mobs(self, start):
-        spawn_list = MOBS[self.level]
+        spawn_list = SPAWN_DATA[self.level]
         for index, (interval, road_index, mob_type) in enumerate(spawn_list):
             if interval <= start:
                 start -= interval
@@ -654,9 +659,9 @@ class Game:
             self.update_and_render()
             self.pause()
             return
-        for plant in self.plants_data:
+        for plant in self.plants:
             if click.colliderect(plant) and plant.free:
-                AddTowerMenu(self.plants_data[plant], plant, self.moblist, self.currency, self.towers, self.bullets, self.add_tower_menus)
+                AddTowerMenu(plant, self.moblist, self.currency, self.towers, self.bullets, self.add_tower_menus)
                 return
         for mob in self.moblist:
             if click.colliderect(mob):
@@ -798,7 +803,7 @@ class Game:
         cur.execute('''DELETE FROM bullets
                        WHERE slot_id = ?''', (self.save_slot,))
         bullets_data = []
-        for bullet in self.bullets.sprites():
+        for bullet in self.bullets:
             bullets_data.append((self.save_slot, *bullet.coords, bullet.angle, *bullet.end_coords, bullet.type,
                                  bullet.velocity, bullet.damage, self.moblist.index(bullet.mob)))
         if bullets_data:
@@ -807,7 +812,7 @@ class Game:
         cur.execute('''DELETE FROM towers
                        WHERE slot_id = ?''', (self.save_slot,))
         towers_data = []
-        for tower in self.towers.sprites():
+        for tower in self.towers:
             towers_data.append((self.save_slot, *tower.coords, tower.reloading, str(tower), tower.animation_index))
         if towers_data:
             cur.execute('INSERT INTO towers VALUES ' + ', '.join([str(tower_data) for tower_data in towers_data]))
@@ -823,7 +828,8 @@ if __name__ == '__main__':
     pygame.init()
     screen = pygame.display.set_mode(SIZE)
     MOB_ANIMATIONS = load_mob_animations()
-    BULLETS_SPRITES = load_bullet_sprites()
+    BULLETS_SPRITES = load_bullets_sprites()
+    MAINTOWER_IMAGE = pygame.transform.scale(load_image(os.path.join('sprites', 'main_tower.png')), (300, 300))
     ADD_TOWER_MENU_IMAGE = load_image(os.path.join('sprites', 'add_tower_menu.png'))
     COIN_ICON = load_image(os.path.join('sprites', 'coin.png'))
     SMALL_COIN_ICON = pygame.transform.scale(load_image(os.path.join('sprites', 'coin.png')), (20, 20))

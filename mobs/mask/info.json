@@ -1,19 +1,19 @@
 {
   "move": {
     "width": 125,
-    "height": 128,
+    "height": 113,
     "animation_speed": 0.1,
     "animation_length": 6
   },
   "attack": {
     "width": 186,
-    "height": 180,
+    "height": 175,
     "animation_speed": 0.75,
     "animation_length": 12
   },
   "death": {
     "width": 192,
-    "height": 188,
+    "height": 160,
     "animation_speed": 0.1,
     "animation_length": 12
   },

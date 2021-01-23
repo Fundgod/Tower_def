@@ -1,4 +1,6 @@
 SIZE = WIDTH, HEIGHT = 1920, 1080
+PLAYER_1 = 1
+PLAYER_2 = 2
 FPS = 60
 TICK = 1 / 60
 MASK = 'mask'
@@ -7,8 +9,10 @@ STONE_GOLEM = 'stone_golem'
 BOAR_WARRIOR = 'boar_warrior'
 HORNY_DOG = 'horny_dog'
 CRYSTAL_GOLEM = 'crystal_golem'
+MOBS = (MASK, SKILLET, STONE_GOLEM, BOAR_WARRIOR, HORNY_DOG, CRYSTAL_GOLEM)
+CACHE_VELOCITY = 1 / 30
 
-MOBS = {
+SPAWN_DATA = {
     1: (
         (1, 0, SKILLET),
         (2, 0, CRYSTAL_GOLEM),

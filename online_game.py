@@ -2,51 +2,280 @@ import pygame
 import socket
 import pickle
 import os
+import sys
 import json
 from constants import *
-from main import load_image, load_animation, load_mob_animations, load_bullet_sprites, draw_health_indicator
+from main import Button, load_image, load_animation, load_mob_animations, load_bullets_sprites, draw_health_indicator
+# FIXME двух строчкек ниже быть не должно, это только для отладки
+#import subprocess
+#subprocess.Popen('python server.py')
+
+
+SERVER = '127.0.0.1'
+PORT = 444
+ADDRESS = (SERVER, PORT)
 
 
 def load_mobs_data():
     data = {}
     animations = load_mob_animations()
-    for mob in (MASK, SKILLET, STONE_GOLEM, BOAR_WARRIOR, HORNY_DOG, CRYSTAL_GOLEM):
+    for mob in MOBS:
         with open(os.path.join('mobs', mob, 'info.json'), 'r', encoding='utf-8') as info_file:
             data[mob] = json.load(info_file)
         data[mob]['animations'] = animations[mob]
     return data
 
 
-SERVER =   # '127.0.0.1'
-PORT = 4444
-ADDRESS = (SERVER, PORT)
+def load_towers_sprites():
+    towers_sprites = {}
+    path = os.path.join('sprites', 'towers')
+    for tower, width, height in (('bow', 250, 250), ('mortar', 255, 255)):
+        towers_sprites[tower] = load_animation(os.path.join(path, tower + '.png'), width, height)
+    return towers_sprites
+
+
+def load_mob_icons():
+    mob_icons = {}
+    path = 'mobs'
+    for mob in MOBS:
+        mob_icons[mob] = load_image(os.path.join(path, mob, 'sprites', 'icon.png'))
+    return mob_icons
+
+
+def load_road_zones():
+    zones = {
+        PLAYER_1: [],
+        PLAYER_2: []
+    }
+    path_to_roads = os.path.join('online_game_map', 'ways')
+    for road, rect1, rect2 in (('road1', (193, 404, 322, 372), (1420, 371, 326, 324)),
+                               ('road2', (0, 0, 500, 547), (1420, 0, 500, 510)),
+                               ('road3', (0, 621, 500, 459), (1420, 591, 543, 489))):
+        p1_zone = pygame.sprite.Sprite()
+        p1_zone.rect = pygame.Rect(*rect1)
+        p1_zone.mask = pygame.mask.from_surface(load_image(os.path.join(path_to_roads, road, 'p1_mob_spawn_zone.png')))
+        zones[PLAYER_1].append(p1_zone)
+
+        p2_zone = pygame.sprite.Sprite()
+        p2_zone.rect = pygame.Rect(*rect2)
+        p2_zone.mask = pygame.mask.from_surface(load_image(os.path.join(path_to_roads, road, 'p2_mob_spawn_zone.png')))
+        zones[PLAYER_2].append(p2_zone)
+    return zones
+
+
+def remake_mob_icons(player):
+    if player == PLAYER_1:
+        for mob in MOB_ICONS.keys():
+            MOB_ICONS[mob] = pygame.transform.flip(MOB_ICONS[mob], True, False)
+
 
 def draw_mob(player, mob_type, coords, state, animation_index, health, screen):
-    x, y = coords
     image = MOBS_DATA[mob_type]['animations'][state][animation_index]
     if player == 1:
         image = pygame.transform.flip(image, True, False)
-    mob_coords = (x - MOBS_DATA[mob_type][state]['width'] / 2, y - MOBS_DATA[mob_type][state]['height'] / 2)
-    screen.blit(image, mob_coords)
+    screen.blit(image, coords)
+    # Отрисовка полоски ХП
+    health_line_bias_x = MOBS_DATA[mob_type]['health_line_bias']['x']
+    health_line_bias_y = MOBS_DATA[mob_type]['health_line_bias']['y']
+    if player == 1:
+        health_line_bias_x = MOBS_DATA[mob_type][state]['width'] - health_line_bias_x - 30
     draw_health_indicator(
-        x - MOBS_DATA[mob_type]['health_line_bias']['x'],
-        mob_coords[1] - MOBS_DATA[mob_type]['health_line_bias']['y'],
+        coords[0] + health_line_bias_x,
+        coords[1] - health_line_bias_y,
         health,
         MOBS_DATA[mob_type]['health'],
         30,
+        5,
         screen
     )
 
 
+def draw_tower(player, tower_type, coords, animation_index, screen):
+    image = TOWERS_SPRITES[tower_type][animation_index]
+    if player == 1:
+        image = pygame.transform.flip(image, True, False)
+    screen.blit(image, coords)
+
+
+def draw_bullet(bullet_type, coords, angle, animation_index, screen):
+    image = pygame.transform.rotate(BULLETS_SPRITES[bullet_type][animation_index], angle)
+    screen.blit(image, coords)
+
+
+class AddTowerMenu(pygame.sprite.Sprite):
+    width = 400
+    height = 180
+
+    def __init__(self, plant, client, currency, group):
+        super().__init__(group)
+        self.coords = plant.rect.x, plant.rect.y
+        self.client = client
+        self.currency = currency
+        self.plant = plant
+        self.image = ADD_TOWER_MENU_IMAGE
+        self.width, self.height = AddTowerMenu.width, AddTowerMenu.height
+        self.rect = pygame.Rect(self.coords[0] - 70,
+                                self.coords[1] - 100,
+                                self.width,
+                                self.height)
+        self.buttons = pygame.sprite.Group()
+        self.bow_tower_button = Button(
+            (self.coords[0] - 5, self.coords[1] - 60, 80, 80),
+            'bow_tower_icon.png',
+            self.buttons
+        )
+        self.cost1 = SMALL_FONT.render('50', True, (245, 189, 31))
+        self.gun_tower_button = Button(
+            (self.coords[0] + 95, self.coords[1] - 60, 80, 80),
+            'gun_tower_icon.png',
+            self.buttons
+        )
+        self.cost2 = SMALL_FONT.render('100', True, (245, 189, 31))
+        self.rocket_tower_button = Button(
+            (self.coords[0] + 195, self.coords[1] - 60, 80, 80),
+            'rocket_tower_icon.png',
+            self.buttons
+        )
+        self.cost3 = SMALL_FONT.render('150', True, (245, 189, 31))
+
+    def check_click(self, click):
+        if click.colliderect(self.bow_tower_button):
+            if self.currency >= 50:
+                self.spawn_tower('bow')
+        elif click.colliderect(self.gun_tower_button):
+            if self.currency >= 100:
+                self.spawn_tower('bow')
+        elif click.colliderect(self.rocket_tower_button):
+            if self.currency >= 150:
+                self.spawn_tower('bow')
+
+    def spawn_tower(self, tower):
+        self.client.send(str.encode(f"spawn_tower {tower} {';'.join(map(str, self.coords))}"))
+        self.plant.free = False
+        self.plant.kill()
+        Game.plants_count -= 1
+
+    def draw_buttons(self, surface):
+        self.buttons.draw(surface)
+        costs_height = self.coords[1] + 20
+        surface.blit(self.cost1, (self.coords[0] + 15, costs_height))
+        surface.blit(self.cost2, (self.coords[0] + 105, costs_height))
+        surface.blit(self.cost3, (self.coords[0] + 205, costs_height))
+        surface.blit(SMALL_COIN_ICON, (self.coords[0] + 45, costs_height))
+        surface.blit(SMALL_COIN_ICON, (self.coords[0] + 150, costs_height))
+        surface.blit(SMALL_COIN_ICON, (self.coords[0] + 250, costs_height))
+
+
+class SpawnMobMenu(pygame.sprite.Group):
+    def __init__(self, player):
+        super().__init__()
+        self.player = player
+        self.background_image = pygame.sprite.Sprite(self)
+        self.background_image.rect = pygame.Rect(0, 820, 319, 267)
+        self.background_image.image = load_image(os.path.join('sprites', 'spawn_mob_menu.png'))
+        self.spawnable_zone = pygame.sprite.Sprite()
+        self.spawnable_zone.rect = pygame.Rect(0, 0, 500, 1080)
+        if player == PLAYER_2:
+            self.spawnable_zone.rect.x += 1520
+        self.spawnable_zone.image = load_image(os.path.join('sprites', 'mob_spawn_zone.png'))
+        x_bias = 0
+        if player == PLAYER_2:
+            x_bias = 1605
+        self.background_image.rect.x += x_bias
+        self.buttons_dict = {
+            Button((30 + x_bias, 845, 80, 80), SKILLET + '_icon.png', self): SKILLET,
+            Button((120 + x_bias, 845, 80, 80), STONE_GOLEM + '_icon.png', self): STONE_GOLEM,
+            Button((210 + x_bias, 845, 80, 80), CRYSTAL_GOLEM + '_icon.png', self): CRYSTAL_GOLEM,
+            Button((30 + x_bias, 955, 80, 80), HORNY_DOG + '_icon.png', self): HORNY_DOG,
+            Button((120 + x_bias, 955, 80, 80), BOAR_WARRIOR + '_icon.png', self): BOAR_WARRIOR,
+            Button((210 + x_bias, 955, 80, 80), MASK + '_icon.png', self): MASK
+        }
+        self.selected_mob = None
+        self.mouse_pos = (0, 0)
+
+    def set_mouse_pos(self, pos):
+        self.mouse_pos = pos
+
+    def check_click_down(self, click):
+        for button in self.buttons_dict.keys():
+            if click.colliderect(button):
+                self.selected_mob = self.buttons_dict[button]
+                self.add(self.spawnable_zone)
+
+    def check_click_up(self, click_rect):
+        click = pygame.sprite.Sprite()
+        click.rect = click_rect
+        click.mask = pygame.mask.Mask((1, 1), True)
+        selected_mob = self.selected_mob
+        self.selected_mob = None
+        self.remove(self.spawnable_zone)
+        for road_index, road_zone in enumerate(ROAD_ZONES[self.player]):
+            if selected_mob and pygame.sprite.collide_mask(click, road_zone):
+                return f'spawn_mob {selected_mob} {road_index} {click.rect.x};{click.rect.y}'
+        return 'ok'
+
+    def draw(self, screen):
+        super().draw(screen)
+        if self.selected_mob:
+            screen.blit(MOB_ICONS[self.selected_mob], self.mouse_pos)
+
+
 class Game:
+    total_plants = 2
+    plants_count = 2
+
     def __init__(self, screen):
+        self.screen = screen
+        self.plants = self.load_plants()
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.connect(ADDRESS)
-        self.player_index = pickle.loads(self.client.recv(2048))
-        self.screen = screen
+        data = pickle.loads(self.client.recv(1024))
+        if isinstance(data, int):
+            self.player_index = data
+        else:
+            self.handle_server_abort()
+        remake_mob_icons(self.player_index)
+        self.add_tower_menus = pygame.sprite.Group()
+        self.main_towers_hp = {
+            PLAYER_1: 1000,
+            PLAYER_2: 1000
+        }
+        self.currency = 100
+        self.spawn_mob_menu = SpawnMobMenu(self.player_index)
 
-    def on_click(self, pos):
+    def load_plants(self):
+        plants = pygame.sprite.Group()
+        plant_image = load_image('sprites/plant.png')
+        with open(os.path.join('online_game_map', 'plants.csv'), 'r') as f:
+            for line in f.readlines():
+                x, y = tuple(map(lambda coord: float(coord) - 125, line.split()[0].split(';')))
+                player = int(line.split()[1])
+                plant_sprite = pygame.sprite.Sprite(plants)
+                plant_sprite.rect = pygame.Rect(x, y, 250, 250)
+                plant_sprite.image = plant_image
+                plant_sprite.free = True
+                plant_sprite.player = player
+        return plants
+
+    def on_click_down(self, pos):
         click = pygame.Rect(*pos, 1, 1)
+        self.spawn_mob_menu.check_click_down(click)
+        for add_tower_menu in self.add_tower_menus:
+            add_tower_menu.check_click(click)
+            self.close_add_tower_menu()
+            return
+        self.close_add_tower_menu()
+        for plant in self.plants:
+            if click.colliderect(plant) and plant.free and plant.player == self.player_index:
+                AddTowerMenu(plant, self.client, self.currency, self.add_tower_menus)
+                return
+
+    def on_release(self, pos):
+        self.spawn_mob_menu.set_mouse_pos(pos)
+
+    def on_click_up(self, pos):
+        click = pygame.Rect(*pos, 1, 1)
+        return self.spawn_mob_menu.check_click_up(click)
 
     def get_data_from_server(self, my_data='ok'):
         self.client.send(str.encode(my_data))
@@ -56,47 +285,87 @@ class Game:
             data.append(packet)
             if len(packet) != 2048:
                 break
-        data_from_server = pickle.loads(b"".join(data))
-        #data_from_server = pickle.loads(self.client.recv(2048))
-        return data_from_server
+        data = pickle.loads(b"".join(data))
+        return data
+
+    def render_currency(self):
+        self.screen.blit(COIN_ICON, (20, 20))
+        currency_text = CURRENCY_FONT.render(f': {self.currency}', True, (245, 189, 31))
+        self.screen.blit(currency_text, (130, 40))
+
+    def render_main_towers(self):
+        screen.blit(MAINTOWER_IMAGE, (-50, 370))
+        screen.blit(MAINTOWER_IMAGE, (1680, 380))
+        # Отрисовка хп
+        pygame.draw.rect(self.screen, 'blue', (45, 400, 110, 20))
+        pygame.draw.rect(self.screen, 'blue', (1775, 410, 110, 20))
+        draw_health_indicator(50, 405, self.main_towers_hp[PLAYER_1], 1000, 100, 10, self.screen)
+        draw_health_indicator(1780, 415, self.main_towers_hp[PLAYER_2], 1000, 100, 10, self.screen)
 
     def update_and_render(self, user_action='ok'):
         # Получение данных:
         data = self.get_data_from_server(user_action)
-        # Отрисовка полученных объектов:
-        screen.fill('black')
-        self.screen.blit(MAP_IMAGE, (0, 0))
-        for mob_data in data[0]:
-            draw_mob(*mob_data, self.screen)
-        for tower in data[1]:
-            pass
-        for bullet in data[2]:
-            pass
+        if data != 'Waiting for players':
+            # Установка полученных значений:
+            self.main_towers_hp[PLAYER_1] = data[3]
+            self.main_towers_hp[PLAYER_2] = data[4]
+            self.currency = data[5] if self.player_index == PLAYER_1 else data[6]
+            # Если противник поставил башню, то нужно удалить соответствующий плент:
+            if len(data[1]) != Game.total_plants - Game.plants_count:
+                towers_data = [tower_data[2] for tower_data in data[1]]
+                for plant in self.plants:
+                    if (plant.rect.x, plant.rect.y - 50) in towers_data:
+                        self.plants.remove(plant)
+                        Game.plants_count -= 1
+            # Отрисовка полученных объектов:
+            screen.fill('black')
+            self.screen.blit(MAP_IMAGE, (0, 0))
+            self.render_main_towers()
+            for mob_data in data[0]:
+                draw_mob(*mob_data, self.screen)
+            for tower_data in data[1]:
+                draw_tower(*tower_data, self.screen)
+            for bullet_data in data[2]:
+                draw_bullet(*bullet_data, self.screen)
+            self.plants.draw(self.screen)
+            self.add_tower_menus.draw(self.screen)
+            for add_tower_menu in self.add_tower_menus:
+                add_tower_menu.draw_buttons(self.screen)
+            self.render_currency()
+            self.spawn_mob_menu.draw(self.screen)
+        else:
+            self.screen.blit(WAITING_PLAYERS_SCREEN, (0, 0))
+
+    def close_add_tower_menu(self):
+        for add_tower_menu in self.add_tower_menus:
+            add_tower_menu.kill()
+
+    def handle_server_abort(self):
+        print('Here should be a screen with title like: server overflow, wait a bit and try again')
+        pygame.quit()
+        sys.exit(0)
 
 
 def play_online(screen):
     game = Game(screen)
     running = True
     time = pygame.time.Clock()
-    font = pygame.font.SysFont("Arial", 18)
+    fps_font = pygame.font.SysFont("Arial", 18)
+    user_action = 'ok'
     while running:
-        time.tick(FPS)
+        game.update_and_render(user_action)
         user_action = 'ok'
+        time.tick(FPS)
         for event in pygame.event.get():
             if event.type == pygame.MOUSEBUTTONDOWN:
-                x, y = event.pos
-                if event.button == 1:
-                    user_action = f'spawn_mob skillet {x};{y}'
-                elif event.button == 2:
-                    user_action = f'spawn_mob stone_golem {x};{y}'
-                elif event.button == 3:
-                    user_action = f'spawn_mob mask {x};{y}'
-                elif event.button == 4:
-                    user_action = f'spawn_mob boar_warrior {x};{y}'
+                game.on_click_down(event.pos)
+            elif event.type == pygame.MOUSEMOTION:
+                game.on_release(event.pos)
+            elif event.type == pygame.MOUSEBUTTONUP:
+                user_action = game.on_click_up(event.pos)
             elif event.type == pygame.QUIT:
                 running = False
-        game.update_and_render(user_action)
-        fps_text = font.render(str(int(time.get_fps())), True, (0, 255, 0))
+        fps_text = fps_font.render(str(int(time.get_fps())), True, (0, 255, 0))
         screen.blit(fps_text, (10, 0))
         pygame.display.flip()
     pygame.quit()
@@ -105,6 +374,17 @@ def play_online(screen):
 if __name__ == '__main__':
     pygame.init()
     screen = pygame.display.set_mode(SIZE)
-    MOBS_DATA = load_mobs_data()
     MAP_IMAGE = load_image(os.path.join('online_game_map', 'image.png'))
+    ADD_TOWER_MENU_IMAGE = load_image(os.path.join('sprites', 'add_tower_menu.png'))
+    MOB_ICONS = load_mob_icons()
+    COIN_ICON = load_image(os.path.join('sprites', 'coin.png'))
+    SMALL_COIN_ICON = pygame.transform.scale(load_image(os.path.join('sprites', 'coin.png')), (20, 20))
+    MOBS_DATA = load_mobs_data()
+    ROAD_ZONES = load_road_zones()
+    TOWERS_SPRITES = load_towers_sprites()
+    BULLETS_SPRITES = load_bullets_sprites()
+    MAINTOWER_IMAGE = pygame.transform.scale(load_image(os.path.join('sprites', 'main_tower.png')), (300, 300))
+    CURRENCY_FONT = pygame.font.SysFont('Arial', 60)
+    SMALL_FONT = pygame.font.SysFont('Arial', 25)
+    WAITING_PLAYERS_SCREEN = load_image(os.path.join('sprites', 'waiting_players_screen.png'))
     play_online(screen)
