@@ -8,7 +8,7 @@ from constants import *
 from main import Button, load_image, load_animation, load_mob_animations, load_bullets_sprites, draw_health_indicator
 
 
-SERVER = "109.226.242.226"  # '127.0.0.1'
+SERVER = '127.0.0.1'  # '109.226.242.226'  # '127.0.0.1'
 PORT = 4444
 ADDRESS = (SERVER, PORT)
 

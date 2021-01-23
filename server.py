@@ -385,9 +385,14 @@ class OnlineGame:
                 time.sleep(sleep_time)
 
     def let_mobs_fight(self, mob1, mob2):
+        x = (mob1.coords[0] + mob2.coords[0]) / 2
         y = (mob1.coords[1] + mob2.coords[1]) / 2
-        mob1.coords[1] = y
-        mob2.coords[1] = y
+        if mob1.player == PLAYER_1:
+            mob1.coords = [x - 30, y]
+            mob2.coords = [x + 30, y]
+        else:
+            mob1.coords = [x + 30, y]
+            mob2.coords = [x - 30, y]
         mob1.attack(mob2)
         mob2.attack(mob1)
 

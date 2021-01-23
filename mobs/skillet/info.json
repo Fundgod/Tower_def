@@ -21,7 +21,7 @@
     "x": 15,
     "y": 10
   },
-  "velocity": 600,
+  "velocity": 60,
   "health": 30,
   "damage": 10,
   "cost": 5
