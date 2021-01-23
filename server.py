@@ -17,7 +17,7 @@ def opponent(player):
 
 
 server = "0.0.0.0"
-port = 444
+port = 4444
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -32,8 +32,9 @@ print('Waiting for connection')
 
 
 class Room:
-    def __init__(self, player_1_connection):
+    def __init__(self, player_1_connection, rooms):
         self.player_1 = (PLAYER_1, player_1_connection)
+        self.rooms = rooms
         self.player_2 = None
         self.game = OnlineGame()
 
@@ -49,9 +50,16 @@ class Room:
         return False
 
     def close(self):
-        self.player_1[1].close()
+        if self.player_1 is not None:
+            self.player_1[1].close()
+            self.player_1 = None
+            print('player 1 disconnected succesfully')
         if self.player_2 is not None:
             self.player_2[1].close()
+            self.player_2 = None
+            print('player 2 disconnected succesfully')
+        if self in self.rooms:
+            self.rooms.remove(self)
 
 
 def clients_accepting():
@@ -65,7 +73,7 @@ def clients_accepting():
             Thread(target=client_processing, args=[conn, PLAYER_2, room]).start()
             room.start_game()
         elif len(rooms) < 3:
-            room = Room(conn)
+            room = Room(conn, rooms)
             rooms.append(room)
             Thread(target=client_processing, args=[conn, PLAYER_1, room]).start()
         else:
@@ -102,7 +110,7 @@ def client_processing(conn, player, room):
 def load_ways():
     ways = []
     path_to_roads = os.path.join('online_game_map', 'ways')
-    for road in os.listdir(path_to_roads):
+    for road in sorted(os.listdir(path_to_roads)):
         ways.append([])
         path_to_ways = os.path.join(path_to_roads, road)
         for way_file in os.listdir(path_to_ways):

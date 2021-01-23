@@ -6,13 +6,10 @@ import sys
 import json
 from constants import *
 from main import Button, load_image, load_animation, load_mob_animations, load_bullets_sprites, draw_health_indicator
-# FIXME двух строчкек ниже быть не должно, это только для отладки
-#import subprocess
-#subprocess.Popen('python server.py')
 
 
-SERVER = '127.0.0.1'
-PORT = 444
+SERVER = "109.226.242.226"  # '127.0.0.1'
+PORT = 4444
 ADDRESS = (SERVER, PORT)
 
 
