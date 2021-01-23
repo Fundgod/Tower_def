@@ -5,6 +5,11 @@ import os
 import unittest
 import platform
 
+try:
+    import pathlib
+except ImportError:
+    pathlib = None
+
 import pygame
 from pygame import font as pygame_font  # So font can be replaced with ftfont
 from pygame.compat import as_unicode, unicode_, as_bytes, xrange_, filesystem_errors
@@ -113,6 +118,52 @@ class FontModuleTest(unittest.TestCase):
             self.assertFalse(path is None)
             self.assertTrue(os.path.isabs(path))
 
+    def test_match_font_name(self):
+        """That match_font accepts names of various types"""
+        font = pygame_font.get_fonts()[0]
+        font_path = pygame_font.match_font(font)
+        self.assertIsNotNone(font_path)
+        font_b = font.encode()
+        not_a_font = "thisisnotafont"
+        not_a_font_b = b"thisisnotafont"
+        good_font_names = [
+            # Check single name bytes.
+            font_b,
+            # Check string of comma-separated names.
+            ",".join([not_a_font, font, not_a_font]),
+            # Check list of names.
+            [not_a_font, font, not_a_font],
+            # Check generator:
+            (name for name in [not_a_font, font, not_a_font]),
+            # Check comma-separated bytes.
+            b",".join([not_a_font_b, font_b, not_a_font_b]),
+            # Check list of bytes.
+            [not_a_font_b, font_b, not_a_font_b],
+            # Check mixed list of bytes and string.
+            [font, not_a_font, font_b, not_a_font_b],
+        ]
+        for font_name in good_font_names:
+            self.assertEqual(
+                pygame_font.match_font(font_name), font_path, font_name
+            )
+
+    def test_not_match_font_name(self):
+        """match_font return None when names of various types do not exist"""
+        not_a_font = "thisisnotafont"
+        not_a_font_b = b"thisisnotafont"
+        bad_font_names = [
+            not_a_font,
+            ",".join([not_a_font, not_a_font, not_a_font]),
+            [not_a_font, not_a_font, not_a_font],
+            (name for name in [not_a_font, not_a_font, not_a_font]),
+            not_a_font_b,
+            b",".join([not_a_font_b, not_a_font_b, not_a_font_b]),
+            [not_a_font_b, not_a_font_b, not_a_font_b],
+            [not_a_font, not_a_font_b, not_a_font],
+        ]
+        for font_name in bad_font_names:
+            self.assertIsNone(pygame_font.match_font(font_name), font_name)
+
     def test_match_font_bold(self):
         fonts = pygame_font.get_fonts()
 
@@ -126,19 +177,6 @@ class FontModuleTest(unittest.TestCase):
         self.assertTrue(
             any(pygame_font.match_font(font, italic=True) for font in fonts)
         )
-
-    def test_match_font_comma_separated(self):
-        fonts = pygame_font.get_fonts()
-
-        # Check for not found.
-        self.assertTrue(pygame_font.match_font("thisisnotafont") is None)
-
-        # Check comma separated list.
-        names = ",".join(["thisisnotafont", fonts[-1], "anothernonfont"])
-        self.assertFalse(pygame_font.match_font(names) is None)
-        names = ",".join(["thisisnotafont1", "thisisnotafont2", "thisisnotafont3"])
-        self.assertTrue(pygame_font.match_font(names) is None)
-
 
     def test_issue_742(self):
         """ that the font background does not crash.
@@ -450,6 +488,14 @@ class FontTypeTest(unittest.TestCase):
             os.path.split(pygame.__file__)[0], pygame_font.get_default_font()
         )
         f = pygame_font.Font(font_path, 20)
+
+    @unittest.skipIf(pathlib is None, "no pathlib")
+    def test_load_from_pathlib(self):
+        font_name = pygame_font.get_default_font()
+        font_path = os.path.join(
+            os.path.split(pygame.__file__)[0], pygame_font.get_default_font()
+        )
+        f = pygame_font.Font(pathlib.Path(font_path), 20)
 
     def test_load_from_file_obj(self):
         font_name = pygame_font.get_default_font()
