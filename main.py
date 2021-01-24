@@ -12,6 +12,23 @@ def draw_health_indicator(x, y, health, max_health, indicator_width, indicator_h
     pygame.draw.rect(screen, 'green', (x, y, indicator_width * health / max_health, indicator_height))
 
 
+def start_or_stop_music(music, stop=False):
+    for i in range(0, 10):
+        music.set_volume(1 + 0.1 * stop * i)
+        sleep(0.1)
+    if stop:
+        music.stop()
+
+
+def fade(screen, image, w, h, coords=(0, 0), fade_level=300):
+    image = pygame.transform.scale(image, (w, h))
+    for alpha in range(0, fade_level):
+        image.set_alpha(alpha)
+        screen.blit(image, coords)
+        pygame.display.update()
+        pygame.time.delay(5)
+
+
 class Map:
     def __init__(self, index):
         self.dir = f'map{index}'
@@ -554,8 +571,34 @@ class Game:
                 plant_sprite.free = True
         return plants
 
+    def load_screen(self):
+
+        def load_frame(num):
+            name = f'0 ({num}).png'
+            return load_image(os.path.join('sprites', 'Loading_screen', name))
+
+        frame_index = 1
+        time = pygame.time.Clock()
+        load_sound = pygame.mixer.Sound(os.path.join('sounds', 'Snake_load_sound.wav'))
+        load_sound.play()
+
+        while frame_index < 280:
+            time.tick(FPS)
+            for event in pygame.event.get():
+                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                    load_sound.stop()
+                    return
+            screen.blit(load_frame(frame_index), (0, 0))
+            frame_index += 1
+            pygame.display.flip()
+
+        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080)
+
     def begin(self):
-        # Инициализация фоновой картинки и главного меню
+        # Фоновая музыка меню
+        background_menu_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_sound.wav'))
+        background_menu_sound.play()
+        # Инициализация фоновой картинки и кнопок
         background = load_image(os.path.join('sprites', 'background_image.png'))
         menu = pygame.sprite.Group()
         menu_table = pygame.sprite.Sprite(menu)
@@ -598,6 +641,8 @@ class Game:
                         for index, button in enumerate(save_slot_buttons):
                             if click.colliderect(button.rect):
                                 self.start(index + 1)
+                                Thread(target=start_or_stop_music, args=(background_menu_sound, True),
+                                       daemon=True).start()
                                 return
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_END:
@@ -607,10 +652,32 @@ class Game:
             pygame.display.flip()
 
     def start(self, save_slot):
+        # Мелодия боя
+        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
+        self.background_fight_sound.set_volume(0)
+        self.background_fight_sound.play()
+        self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
+        Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
+
         self.save_slot = save_slot
         spawner_start = self.load_game_data(save_slot)
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
+
+    def game_over(self):
+        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
+        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080, fade_level=150)
+        fade(self.screen, load_image(os.path.join('sprites', 'game_over.png')), 800, 827, coords=(560, 170), fade_level=500)
+        time = pygame.time.Clock()
+        time_to_restart = 240
+        while time_to_restart > 0:
+            time.tick(FPS)
+            for event in pygame.event.get():
+                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                    time_to_restart = 0
+            time_to_restart -= 1
+            pygame.display.flip()
+        self.begin()
 
     def spawn_mobs(self, start):
         spawn_list = SPAWN_DATA[self.level]
@@ -746,6 +813,11 @@ class Game:
             self.moblist.append(mob)
         # Отрисовка карты
         self.map.render(self.screen)
+        # Проверка на проигранность игры
+        if self.mt.health < 0:
+            self.on_pause = True
+            self.mt.health = self.mt.full_hp
+            self.game_over()
         # Обновление и отрисовка игровых объектов
         self.main_tower.update()
         self.main_tower.draw(self.screen)
@@ -816,6 +888,7 @@ if __name__ == '__main__':
     #pygame.init()
     screen = pygame.display.set_mode(SIZE)
     game = Game(screen)
+    game.load_screen()
     game.begin()
     running = True
     fps_font = pygame.font.SysFont("Arial", 18)
