@@ -162,6 +162,10 @@ class Mob(pygame.sprite.Sprite):
             self.kill()
         elif round(self.animation_index) == self.animation_length:
             super().kill()
+    
+    def get_state(self):
+        return (self.type, self.road_index, self.way_index, *self.coords,
+                self.pos, self.state, self.animation_index, *self.steps, self.health, self.tagged)
 
     def attack(self, target):
         attack_animation = self.animations['attack']
@@ -221,9 +225,9 @@ class BowTower(pygame.sprite.Sprite):
                     return
         else:
             self.reloading -= 1
-
-    def __str__(self):
-        return 'bow'
+    
+    def get_state(self):
+        return *self.coords, self.reloading, 'bow', self.animation_index
 
 
 class CannonTower(pygame.sprite.Sprite):
@@ -264,16 +268,49 @@ class CannonTower(pygame.sprite.Sprite):
                     return
         else:
             self.reloading -= 1
-
-    def __str__(self):
-        return 'cannon'
+    
+    def get_state(self):
+        return *self.coords, self.reloading, 'cannon', self.animation_index
 
 
 class CrystalTower(pygame.sprite.Sprite):
     cost = 150
+    width = 250
+    height = 250
+    time_to_reload = 30
+    shooting_range = 700
+    damage = 5
+    x_bias = 115
+    y_bias = -25
 
-    def __str__(self):
-        return 'crystal'
+    def __init__(self, group, coords, moblist, bullets_group, reloading=0, animation_index=0):
+        super().__init__(group)
+        self.coords = (coords[0] + self.x_bias, coords[1] + self.y_bias)
+        self.moblist = moblist
+        self.bullets_group = bullets_group
+        self.reloading = reloading
+        self.animation_index = animation_index
+        self.image = TOWERS_SPRITES['crystal'][0]
+        self.rect = pygame.Rect(self.coords[0] - self.x_bias,
+                                self.coords[1] + self.y_bias,
+                                self.width,
+                                self.height)
+
+    def update(self):
+        if not self.reloading:
+            for mob in sorted(self.moblist, key=lambda mob_: not mob_.tagged):
+                distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
+                if distance <= self.shooting_range and mob.state != 'death':
+                    HomingBullet(self.bullets_group, self.coords, self.damage, 'sphere', mob)
+                    self.reloading = self.time_to_reload
+                    return
+        else:
+            self.reloading -= 1
+        self.animation_index = (self.animation_index + 1) % 1
+        self.image = TOWERS_SPRITES['crystal'][self.animation_index]
+
+    def get_state(self):
+        return *self.coords, self.reloading, 'crystal', self.animation_index
 
 
 class MainTower(pygame.sprite.Sprite):
@@ -367,6 +404,44 @@ class Bullet(pygame.sprite.Sprite):
         else:
             self.mob.hit(self.damage)
             self.kill()
+    
+    def get_state(self):
+        return *self.coords, self.angle, *self.end_coords, self.type, self.velocity, self.damage
+
+
+class HomingBullet(pygame.sprite.Sprite):
+    def __init__(self, group, start_coords, damage, type, mob, angle=0):
+        super().__init__(group)
+        self.coords = list(start_coords)
+        self.damage = damage
+        self.type = type
+        self.mob = mob
+        self.velocity = 5
+        self.animation_index = 0
+        self.animation_length = 5
+        self.rect = pygame.Rect(*self.coords, 40, 25)
+        self.image = BULLETS_SPRITES[self.type][0]
+        self.angle = angle
+
+    def update(self):
+        x, y = self.coords
+        x1, y1 = self.mob.coords
+        d_x, d_y = x1 - x, y - y1
+        distance = math.hypot(d_x, d_y)
+        self.coords[0] += self.velocity * (d_x / distance)
+        self.coords[1] += self.velocity * (-d_y / distance)
+        self.rect.x, self.rect.y = self.coords
+        self.angle = math.atan(d_y / d_x)
+        if d_x > 0:
+            self.angle += math.pi
+        self.image = pygame.transform.rotate(BULLETS_SPRITES[self.type][self.animation_index], math.degrees(self.angle))
+        self.animation_index = (self.animation_index + 1) % self.animation_length
+        if distance < 10 or self.mob.state == 'death':
+            self.mob.hit(self.damage)
+            self.kill()
+    
+    def get_state(self):
+        return *self.coords, self.angle, 0, 0, self.type, self.velocity, self.damage
 
 
 class AddTowerMenu(pygame.sprite.Sprite):
@@ -472,7 +547,7 @@ class MobMark(pygame.sprite.Group):
 
 
 class Game:
-    currency = 100
+    currency = 1000
 
     def __init__(self, screen):
         self.screen = screen
@@ -501,7 +576,7 @@ class Game:
         self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
         self.time_in_game = 0
 
-    def load_game_data(self, save_slot_id):
+    def load_progress(self, save_slot_id):
         con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
         cur = con.cursor()
         main_data = cur.execute('''SELECT main_tower_hp, level, play_time, currency FROM slots 
@@ -536,8 +611,11 @@ class Game:
                                           WHERE slot_id = ?''', (save_slot_id,)).fetchall()
             for _, x, y, angle, end_x, end_y, bullet_type, velocity, damage, mob_index in bullets_data:
                 distance = math.hypot(end_x - x, end_y - y)
-                Bullet(self.bullets, (x, y), damage, bullet_type, distance, self.moblist[mob_index],
-                       end_coords=(end_x, end_y), velocity=velocity, angle=angle)
+                if bullet_type == 'sphere':
+                    HomingBullet(self.bullets, (x, y), damage, bullet_type, self.moblist[mob_index], angle=angle)
+                else:
+                    Bullet(self.bullets, (x, y), damage, bullet_type, distance, self.moblist[mob_index],
+                           end_coords=(end_x, end_y), velocity=velocity, angle=angle)
             con.close()
             return main_data[2]
         return 0
@@ -608,7 +686,7 @@ class Game:
 
     def start(self, save_slot):
         self.save_slot = save_slot
-        spawner_start = self.load_game_data(save_slot)
+        spawner_start = self.load_progress(save_slot)
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
 
@@ -782,8 +860,7 @@ class Game:
         mobs_data = []
         for mob in self.moblist:
             if mob.state != 'death':
-                mobs_data.append((self.save_slot, mob.type, mob.road_index, mob.way_index, *mob.coords,
-                                  mob.pos, mob.state, mob.animation_index, *mob.steps, mob.health, mob.tagged))
+                mobs_data.append((self.save_slot, *mob.get_state()))
         if mobs_data:
             cur.execute('INSERT INTO mobs VALUES ' + ', '.join([str(mob_data) for mob_data in mobs_data]))
         self.moblist = [mob for mob in self.moblist if mob.state != 'death']
@@ -792,8 +869,7 @@ class Game:
                        WHERE slot_id = ?''', (self.save_slot,))
         bullets_data = []
         for bullet in self.bullets:
-            bullets_data.append((self.save_slot, *bullet.coords, bullet.angle, *bullet.end_coords, bullet.type,
-                                 bullet.velocity, bullet.damage, self.moblist.index(bullet.mob)))
+            bullets_data.append((self.save_slot, *bullet.get_state(), self.moblist.index(bullet.mob)))
         if bullets_data:
             cur.execute('INSERT INTO bullets VALUES ' + ', '.join([str(bullet_data) for bullet_data in bullets_data]))
         # Сохранение информации о башнях:
@@ -801,7 +877,7 @@ class Game:
                        WHERE slot_id = ?''', (self.save_slot,))
         towers_data = []
         for tower in self.towers:
-            towers_data.append((self.save_slot, *tower.coords, tower.reloading, str(tower), tower.animation_index))
+            towers_data.append((self.save_slot, *tower.get_state()))
         if towers_data:
             cur.execute('INSERT INTO towers VALUES ' + ', '.join([str(tower_data) for tower_data in towers_data]))
         con.commit()
@@ -813,7 +889,6 @@ class Game:
 
 
 if __name__ == '__main__':
-    #pygame.init()
     screen = pygame.display.set_mode(SIZE)
     game = Game(screen)
     game.begin()
