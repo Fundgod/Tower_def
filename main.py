@@ -652,8 +652,8 @@ class Game:
     def load_screen(self):
 
         def load_frame(num):
-            name = f'0 ({num}).png'
-            return load_image(os.path.join('sprites', 'Loading_screen', name))
+            name = f'{num}.png'
+            return load_image(os.path.join('sprites', 'loading_screen', name))
 
         frame_index = 1
         time = pygame.time.Clock()
