@@ -25,6 +25,14 @@ def load_image(name, colorkey=None):
     return image
 
 
+def start_or_stop_music(music, stop=False):
+    for i in range(0, 10):
+        music.set_volume(1 + 0.1 * stop * i)
+        sleep(0.1)
+    if stop:
+        music.stop()
+
+
 def fade(screen, image, w, h, coords=(0, 0), fade_level=300):
     image = pygame.transform.scale(image, (w, h))
     for alpha in range(0, fade_level):
@@ -414,29 +422,28 @@ class Game:
 
         def load_frame(num):
             name = f'0 ({num}).png'
-            return load_image(os.path.join('Loading_screen', name))
+            return load_image(os.path.join('sprites', 'Loading_screen', name))
 
-        num_of_frame = 1
+        frame_index = 1
         time = pygame.time.Clock()
-        playing = True
-        load_sound = pygame.mixer.Sound(os.path.join('sounds', 'Snake_load_sound.mp3'))
+        load_sound = pygame.mixer.Sound(os.path.join('sounds', 'Snake_load_sound.wav'))
         load_sound.play()
 
-        while playing:
+        while frame_index < 280:
             time.tick(FPS)
             for event in pygame.event.get():
-                pass
-            if num_of_frame == 280:
-                playing = False
-            screen.blit(load_frame(num_of_frame), (0, 0))
-            num_of_frame += 1
+                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                    load_sound.stop()
+                    return
+            screen.blit(load_frame(frame_index), (0, 0))
+            frame_index += 1
             pygame.display.flip()
 
         fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080)
 
     def begin(self):
         # Фоновая музыка меню
-        background_menu_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_sound.mp3'))
+        background_menu_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_sound.wav'))
         background_menu_sound.play()
         # Инициализация фоновой картинки и кнопок
         background = load_image(os.path.join('sprites', 'background_image.png'))
@@ -452,10 +459,7 @@ class Game:
                     click = pygame.Rect(*event.pos, 1, 1)
                     if click.colliderect(single_player_button):
                         self.start()
-                        for i in range(0, 10):
-                            background_menu_sound.set_volume(1 - 0.1 * i)
-                            sleep(0.1)
-                        background_menu_sound.stop()
+                        Thread(target=start_or_stop_music, args=(background_menu_sound, True)).start()
                         return
                     elif click.colliderect(exit_button):
                         self.quit()
@@ -466,23 +470,26 @@ class Game:
 
     def start(self):
         # Мелодия боя
-        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.mp3'))
+        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
         self.background_fight_sound.set_volume(0)
         self.background_fight_sound.play()
-        for i in range(0, 3):
-            self.background_fight_sound.set_volume(0 + 0.1 * i)
-            sleep(0.1)
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
         self.mobs_spawn_thread.start()
+        Thread(target=start_or_stop_music, args=(self.background_fight_sound,)).start()
 
     def game_over(self):
-        for i in range(0, 3):
-            self.background_fight_sound.set_volume(0 - 0.1 * i)
-            sleep(0.1)
-        self.background_fight_sound.stop()
+        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True)).start()
         fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080, fade_level=150)
-        fade(self.screen, load_image(os.path.join('sprites', 'Game_over.png')), 800, 827, coords=(560, 170), fade_level=500)
-        sleep(4)
+        fade(self.screen, load_image(os.path.join('sprites', 'game_over.png')), 800, 827, coords=(560, 170), fade_level=500)
+        time = pygame.time.Clock()
+        time_to_restart = 240
+        while time_to_restart > 0:
+            time.tick(FPS)
+            for event in pygame.event.get():
+                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                    time_to_restart = 0
+            time_to_restart -= 1
+            pygame.display.flip()
         self.begin()
 
     def load_plants(self):
