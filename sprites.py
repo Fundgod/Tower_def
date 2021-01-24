@@ -68,7 +68,7 @@ def load_mob_icons():
 def load_bullets_sprites():
     bullets_sprites = {}
     path = os.path.join('sprites', 'bullets')
-    for bullet, width, height in (('arrow', 25, 25), ('shell', 25, 25)):
+    for bullet, width, height in (('arrow', 25, 25), ('shell', 25, 25), ('sphere', 40, 25)):
         bullets_sprites[bullet] = load_animation(os.path.join(path, bullet + '.png'), width, height)
     return bullets_sprites
 

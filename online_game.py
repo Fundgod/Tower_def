@@ -304,7 +304,8 @@ class Game:
                 towers_positions = [tower_data[1] for tower_data in data[1]]
                 for plant in self.plants:
                     for tower_position in towers_positions:
-                        if abs(plant.rect.x - tower_position[0]) <= 50 and abs(plant.rect.y - tower_position[1]) <= 50:
+                        print()
+                        if abs(plant.rect.x - tower_position[0]) <= 20 and abs(plant.rect.y - tower_position[1]) <= 100:
                             self.plants.remove(plant)
                             Game.plants_count -= 1
             # Отрисовка полученных объектов:
@@ -358,10 +359,10 @@ def play_online(screen):
         fps_text = fps_font.render(str(int(time.get_fps())), True, (0, 255, 0))
         screen.blit(fps_text, (10, 0))
         pygame.display.flip()
-    pygame.quit()
 
 
 if __name__ == '__main__':
     pygame.init()
     screen = pygame.display.set_mode(SIZE)
     play_online(screen)
+    pygame.quit()
