@@ -10,6 +10,11 @@ import weakref
 import gc
 import platform
 
+try:
+    import pathlib
+except ImportError:
+    pathlib = None
+
 IS_PYPY = "PyPy" == platform.python_implementation()
 
 
@@ -668,8 +673,8 @@ class FreeTypeFontTest(unittest.TestCase):
 
         rrect = font.render_to(surf, (32, 32), "FoobarBaz", color, None, size=24)
         self.assertIsInstance(rrect, pygame.Rect)
-        self.assertEqual(rrect.top, rrect.height)
-        ## self.assertEqual(rrect.left, something or other)
+        self.assertEqual(rrect.topleft, (32, 32))
+        self.assertNotEqual(rrect.bottomright, (32, 32))
 
         rcopy = rrect.copy()
         rcopy.topleft = (32, 32)
@@ -677,10 +682,9 @@ class FreeTypeFontTest(unittest.TestCase):
 
         rect = pygame.Rect(20, 20, 2, 2)
         rrect = font.render_to(surf, rect, "FoobarBax", color, None, size=24)
-        self.assertEqual(rrect.top, rrect.height)
+        self.assertEqual(rect.topleft, rrect.topleft)
         self.assertNotEqual(rrect.size, rect.size)
         rrect = font.render_to(surf, (20.1, 18.9), "FoobarBax", color, None, size=24)
-        ## self.assertEqual(tuple(rend[1].topleft), (20, 18))
 
         rrect = font.render_to(surf, rect, "", color, None, size=24)
         self.assertFalse(rrect)
@@ -880,9 +884,6 @@ class FreeTypeFontTest(unittest.TestCase):
         finally:
             font.antialiased = save_antialiased
 
-    @unittest.skipIf(
-        pygame.get_sdl_version()[0] == 2, "skipping due to blending issue (#864)"
-    )
     def test_freetype_Font_render_to_mono(self):
         # Blitting is done in two stages. First the target is alpha filled
         # with the background color, if any. Second, the foreground
@@ -1651,7 +1652,7 @@ class FreeTypeFontTest(unittest.TestCase):
             o = font.get_metrics("AB")
             self.assertEqual(getrefcount(o), 2)
             for i in range(len(o)):
-                self.assertEqual(getrefcount(o[i]), 2, "refcount fail for item %d" % i)
+                 self.assertEqual(getrefcount(o[i]), 2, "refcount fail for item %d" % i)
             o = font.get_sizes()
             self.assertEqual(getrefcount(o), 2)
             for i in range(len(o)):
@@ -1688,6 +1689,53 @@ class FreeTypeFontTest(unittest.TestCase):
 
         for test in tests:
             run_test(test["method"], test["value"], test["msg"])
+
+    def test_freetype_SysFont_name(self):
+        """that SysFont accepts names of various types"""
+        fonts = pygame.font.get_fonts()
+        size = 12
+
+        # Check single name string:
+        font_name = ft.SysFont(fonts[0], size).name
+        self.assertFalse(font_name is None)
+
+        # Check string of comma-separated names.
+        names = ",".join(fonts)
+        font_name_2 = ft.SysFont(names, size).name
+        self.assertEqual(font_name_2, font_name)
+
+        # Check list of names.
+        font_name_2 = ft.SysFont(fonts, size).name
+        self.assertEqual(font_name_2, font_name)
+
+        # Check generator:
+        names = (name for name in fonts)
+        font_name_2 = ft.SysFont(names, size).name
+        self.assertEqual(font_name_2, font_name)
+
+        fonts_b = [f.encode() for f in fonts]
+
+        # Check single name bytes.
+        font_name_2 = ft.SysFont(fonts_b[0], size).name
+        self.assertEqual(font_name_2, font_name)
+
+        # Check comma-separated bytes.
+        names = b",".join(fonts_b)
+        font_name_2 = ft.SysFont(names, size).name
+        self.assertEqual(font_name_2, font_name)
+
+        # Check list of bytes.
+        font_name_2 = ft.SysFont(fonts_b, size).name
+        self.assertEqual(font_name_2, font_name)
+
+        # Check mixed list of bytes and string.
+        names = [fonts[0], fonts_b[1], fonts[2], fonts_b[3]]
+        font_name_2 = ft.SysFont(names, size).name
+        self.assertEqual(font_name_2, font_name)
+
+    @unittest.skipIf(pathlib is None, "no pathlib")
+    def test_pathlib(self):
+        f = ft.Font(pathlib.Path(self._fixed_path), 20)
 
 
 class FreeTypeTest(unittest.TestCase):

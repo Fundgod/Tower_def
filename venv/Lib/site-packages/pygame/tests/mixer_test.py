@@ -11,6 +11,10 @@ import pygame
 from pygame import mixer
 from pygame.compat import unicode_, as_bytes, bytes_
 
+try:
+    import pathlib
+except ImportError:
+    pathlib = None
 
 IS_PYPY = "PyPy" == platform.python_implementation()
 
@@ -63,7 +67,7 @@ class MixerModuleTest(unittest.TestCase):
         self.assertEqual(mixer_conf[0], CONFIG["frequency"])
         # Not all "sizes" are supported on all systems,  hence "abs".
         self.assertEqual(abs(mixer_conf[1]), abs(CONFIG["size"]))
-        self.assertEqual(mixer_conf[2], CONFIG["channels"])
+        self.assertGreaterEqual(mixer_conf[2], CONFIG["channels"])
 
     def test_pre_init__keyword_args(self):
         # note: this test used to loop over all CONFIGS, but it's very slow..
@@ -75,7 +79,7 @@ class MixerModuleTest(unittest.TestCase):
         self.assertEqual(mixer_conf[0], CONFIG["frequency"])
         # Not all "sizes" are supported on all systems,  hence "abs".
         self.assertEqual(abs(mixer_conf[1]), abs(CONFIG["size"]))
-        self.assertEqual(mixer_conf[2], CONFIG["channels"])
+        self.assertGreaterEqual(mixer_conf[2], CONFIG["channels"])
 
     def test_pre_init__zero_values(self):
         # Ensure that argument values of 0 are replaced with
@@ -83,7 +87,9 @@ class MixerModuleTest(unittest.TestCase):
         mixer.pre_init(22050, -8, 1)  # Non default values
         mixer.pre_init(0, 0, 0)  # Should reset to default values
         mixer.init()
-        self.assertEqual(mixer.get_init(), (44100, -16, 2))
+        self.assertEqual(mixer.get_init()[0], 44100)
+        self.assertEqual(mixer.get_init()[1], -16)
+        self.assertGreaterEqual(mixer.get_init()[2], 2)
 
     def test_init__zero_values(self):
         # Ensure that argument values of 0 are replaced with
@@ -134,7 +140,7 @@ class MixerModuleTest(unittest.TestCase):
         self.assertRaises(pygame.error, mixer.get_num_channels)
 
     # TODO: FIXME: appveyor fails here sometimes.
-    @unittest.expectedFailure
+    @unittest.skipIf(sys.platform.startswith("win"), "See github issue 892.")
     def test_sound_args(self):
         def get_bytes(snd):
             return snd.get_raw()
@@ -934,6 +940,15 @@ class SoundTypeTest(AssertRaisesRegexMixin, unittest.TestCase):
         sound = mixer.Sound(sound_obj)
 
         self.assertIsInstance(sound, mixer.Sound)
+
+    @unittest.skipIf(pathlib is None, "no pathlib")
+    def test_sound__from_pathlib(self):
+        """Ensure Sound() creation with a pathlib.Path object works."""
+        path = pathlib.Path(example_path(os.path.join("data", "house_lo.wav")))
+        sound1 = mixer.Sound(path)
+        sound2 = mixer.Sound(file=path)
+        self.assertIsInstance(sound1, mixer.Sound)
+        self.assertIsInstance(sound2, mixer.Sound)
 
     def todo_test_sound__from_buffer(self):
         """Ensure Sound() creation with a buffer works."""
