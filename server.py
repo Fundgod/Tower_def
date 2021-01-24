@@ -237,23 +237,25 @@ class Mob:
 
 class BowTower:
     cost = 50
+    time_to_reload = 100
+    shooting_range = 600
+    damage = 10
+    animation_index = 0
+    x_bias = 125
+    y_bias = -25
 
     def __init__(self, player, coords, game):
         self.player = player
-        self.coords = (coords[0] + 125, coords[1] - 25)
+        self.coords = (coords[0] + self.x_bias, coords[1] + self.y_bias)
         self.game = game
         self.reloading = 0
-        self.animation_index = 0.
-        self.time_to_reload = 100
-        self.shooting_range = 600
-        self.damage = 10
 
     def get_coords(self):
-        return self.coords[0] - 125, self.coords[1] - 25
+        return self.coords[0] - self.x_bias, self.coords[1] + self.y_bias
 
     def update(self):
         if not self.reloading:
-            for mob in sorted(self.game.mobs[opponent(self.player)], key=lambda mob_: not mob_.tagged):
+            for mob in self.game.mobs[opponent(self.player)]:
                 distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
                 if distance <= self.shooting_range and mob.state != 'death':
                     self.game.bullets.append(Bullet(self.coords, self.damage, 'arrow', distance, mob))
@@ -266,18 +268,49 @@ class BowTower:
         return 'bow'
 
 
-class GunTower:
+class CannonTower:
     cost = 100
+    time_to_reload = 200
+    shooting_range = 800
+    damage = 40
+    x_bias = 125
+    y_bias = 75
+
+    def __init__(self, player, coords, game):
+        self.player = player
+        self.coords = (coords[0] + self.x_bias, coords[1] + self.y_bias)
+        self.game = game
+        self.reloading = 0
+        self.animation_index = 0
+
+    def get_coords(self):
+        return self.coords[0] - self.x_bias, self.coords[1] - self.y_bias
+
+    def update(self):
+        if not self.reloading:
+            for mob in self.game.mobs[opponent(self.player)]:
+                distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
+                if distance <= self.shooting_range and mob.state != 'death':
+                    bullet = Bullet(self.coords, self.damage, 'shell', distance, mob)
+                    self.game.bullets.append(bullet)
+                    angle = bullet.angle
+                    if angle < 2 * math.pi:
+                        angle += 2 * math.pi
+                    self.animation_index = round(angle / (math.pi / 8)) % 16
+                    self.reloading = self.time_to_reload
+                    return
+        else:
+            self.reloading -= 1
 
     def __str__(self):
-        return 'gun'
+        return 'cannon'
 
 
-class RocketTower:
+class CrystalTower:
     cost = 150
 
     def __str__(self):
-        return 'rocket'
+        return 'crystal'
 
 
 class MainTower:
@@ -341,7 +374,6 @@ class Bullet:
         self.angle = -math.atan(d_y / d_x)
         if d_x < 0:
             self.angle += math.pi
-        self.angle = math.degrees(self.angle)
 
     def update(self):
         if self.steps < self.steps_to_target:
@@ -380,7 +412,7 @@ class OnlineGame:
             start_time = time.time()
             self.update()
             self.update_sending_data()
-            sleep_time = TICK - (time.time() - start_time)
+            sleep_time = 0.9 * TICK - (time.time() - start_time)
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
@@ -432,7 +464,8 @@ class OnlineGame:
             mobs_data.append((mob.player, mob.type, mob.get_coords(), mob.state, int(mob.animation_index), mob.health))
         towers_data = []
         for tower in self.towers[PLAYER_1] + self.towers[PLAYER_2]:
-            towers_data.append((tower.player, str(tower), tower.get_coords(), int(tower.animation_index)))
+            towers_data.append((str(tower), tower.get_coords(), int(tower.animation_index)))
+            print(tower.get_coords())
         bullets_data = []
         for bullet in self.bullets:
             bullets_data.append((bullet.type, bullet.coords, bullet.angle, int(bullet.animation_index)))
@@ -453,7 +486,7 @@ class OnlineGame:
         elif action == 'spawn_tower':
             tower_type = data[0]
             coords = tuple(map(int, data[1].split(';')))
-            tower = {'bow': BowTower, 'gun': GunTower, 'rocket': RocketTower}[tower_type]
+            tower = {'bow': BowTower, 'cannon': CannonTower, 'crystal': CrystalTower}[tower_type]
             self.towers[player].append(tower(player, coords, self))
             self.players_cache[player] -= tower.cost
         else:  # action == 'mark_mob'
@@ -474,5 +507,3 @@ if __name__ == '__main__':
     P_1_WAYS = [[ways[::-1] for ways in road] for road in P_2_WAYS]
     clients_accepting_thread = Thread(target=clients_accepting)
     clients_accepting_thread.start()
-    #game = OnlineGame()
-    #game.start()

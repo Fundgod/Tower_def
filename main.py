@@ -1,63 +1,10 @@
-import pygame
 import random
-import sys
-import os
-import json
 import math
 import sqlite3
 from threading import Thread
 from time import sleep
-from constants import *
-
-
-def load_image(name, colorkey=None):
-    if not name:
-        print(f"Файл с изображением '{name}' не найден")
-        sys.exit()
-    image = pygame.image.load(name)
-    if colorkey is not None:
-        image = image.convert()
-        if colorkey == -1:
-            colorkey = image.get_at((0, 0))
-        image.set_colorkey(colorkey)
-    else:
-        image = image.convert_alpha()
-    return image
-
-
-def load_animation(path_to_image, width, height):
-    image = load_image(os.path.join(path_to_image))
-    x, y = image.get_size()
-    frames = []
-    for i in range(y // height):
-        for j in range(x // width):
-            frame_location = (width * j, height * i)
-            frame = image.subsurface(pygame.Rect(frame_location, (width, height)))
-            frames.append(frame)
-    return frames
-
-
-def load_mob_animations():
-    animations = {}
-    root = 'mobs'
-    for mob in os.listdir(root):
-        mob_dir = os.path.join(root, mob)
-        animations[mob] = {}
-        with open(os.path.join(mob_dir, 'info.json'), 'r', encoding='utf-8') as info_file:
-            info = json.load(info_file)
-        for animation in ('move', 'attack', 'death'):
-            animations[mob][animation] = load_animation(os.path.join(mob_dir, 'sprites', animation + '.png'),
-                                                        info[animation]['width'],
-                                                        info[animation]['height'])
-    return animations
-
-
-def load_bullets_sprites():
-    bullets_sprites = {}
-    path = os.path.join('sprites', 'bullets')
-    for bullet, width, height in (('arrow', 25, 25), ('shell', 25, 25)):
-        bullets_sprites[bullet] = load_animation(os.path.join(path, bullet + '.png'), width, height)
-    return bullets_sprites
+from sprites import *
+from online_game import play_online
 
 
 def draw_health_indicator(x, y, health, max_health, indicator_width, indicator_height, screen):
@@ -243,22 +190,24 @@ class Mob(pygame.sprite.Sprite):
 
 class BowTower(pygame.sprite.Sprite):
     cost = 50
+    width = 250
+    height = 250
+    time_to_reload = 100
+    shooting_range = 600
+    damage = 10
+    x_bias = 125
+    y_bias = 25
 
     def __init__(self, group, coords, moblist, bullets_group, reloading=0, animation_index=0):
         super().__init__(group)
-        self.coords = (coords[0] + 125, coords[1] - 25)
+        self.coords = (coords[0] + self.x_bias, coords[1] - self.y_bias)
         self.moblist = moblist
         self.bullets_group = bullets_group
         self.reloading = reloading
         self.animation_index = animation_index
-        self.time_to_reload = 100
-        self.width = 250
-        self.height = 250
-        self.shooting_range = 600
-        self.damage = 10
-        self.image = load_image(os.path.join('sprites', 'towers', 'bow.png'), -1)
-        self.rect = pygame.Rect(self.coords[0] - self.width // 2,
-                                self.coords[1] - self.height // 2 + 100,
+        self.image = BOW_TOWER_IMAGE
+        self.rect = pygame.Rect(self.coords[0] - self.x_bias,
+                                self.coords[1] - self.y_bias,
                                 self.width,
                                 self.height)
 
@@ -277,18 +226,54 @@ class BowTower(pygame.sprite.Sprite):
         return 'bow'
 
 
-class GunTower(pygame.sprite.Sprite):
+class CannonTower(pygame.sprite.Sprite):
     cost = 100
+    width = 250
+    height = 250
+    time_to_reload = 200
+    shooting_range = 800
+    damage = 40
+    x_bias = 125
+    y_bias = 75
+
+    def __init__(self, group, coords, moblist, bullets_group, reloading=0, animation_index=0):
+        super().__init__(group)
+        self.coords = (coords[0] + self.x_bias, coords[1] + self.y_bias)
+        self.moblist = moblist
+        self.bullets_group = bullets_group
+        self.reloading = reloading
+        self.animation_index = animation_index
+        self.image = TOWERS_SPRITES['cannon'][13]
+        self.rect = pygame.Rect(self.coords[0] - self.x_bias,
+                                self.coords[1] - self.y_bias,
+                                self.width,
+                                self.height)
+
+    def update(self):
+        if not self.reloading:
+            for mob in sorted(self.moblist, key=lambda mob_: not mob_.tagged):
+                distance = math.hypot(self.coords[0] - mob.coords[0], self.coords[1] - mob.coords[1])
+                if distance <= self.shooting_range and mob.state != 'death':
+                    bullet = Bullet(self.bullets_group, self.coords, self.damage, 'shell', distance, mob)
+                    angle = bullet.angle
+                    if angle < 2 * math.pi:
+                        angle += 2 * math.pi
+                    self.animation_index = round(angle / (math.pi / 8)) % 16
+                    self.image = TOWERS_SPRITES['cannon'][self.animation_index]
+                    self.reloading = self.time_to_reload
+                    return
+        else:
+            self.reloading -= 1
 
     def __str__(self):
-        return 'gun'
+        return 'cannon'
 
 
-class RocketTower(pygame.sprite.Sprite):
+class CrystalTower(pygame.sprite.Sprite):
     cost = 150
 
     def __str__(self):
-        return 'rocket'
+        return 'crystal'
 
 
 class MainTower(pygame.sprite.Sprite):
@@ -310,9 +295,8 @@ class MainTower(pygame.sprite.Sprite):
     def update(self):
         if self.health > 0:
             pygame.draw.rect(screen, 'blue', (int(self.coords[0] + 95), int(self.coords[1]) + 25, 110, 20))
-            draw_health_indicator(int(self.coords[0] + 100), int(self.coords[1]) + 30, self.health, self.full_hp, 100, 10, screen)
-            #pygame.draw.rect(screen, 'red', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.full_hp // 100, 5))
-            #pygame.draw.rect(screen, 'green', (int(self.coords[0] + 15), int(self.coords[1]) - 10, 30 * self.health // 100, 5))
+            draw_health_indicator(int(self.coords[0] + 100), int(self.coords[1]) + 30,
+                                  self.health, self.full_hp, 100, 10, screen)
         else:
             self.kill()
             # здесь по идее должна поменяться картинка, а не башня должа испариться, но картинки ещё нет
@@ -410,29 +394,29 @@ class AddTowerMenu(pygame.sprite.Sprite):
             self.buttons
         )
         self.cost1 = SMALL_FONT.render(str(BowTower.cost), True, (245, 189, 31))
-        self.gun_tower_button = Button(
+        self.cannon_tower_button = Button(
             (self.coords[0] + 95, self.coords[1] - 60, 80, 80),
-            'gun_tower_icon.png',
+            'cannon_tower_icon.png',
             self.buttons
         )
-        self.cost2 = SMALL_FONT.render(str(GunTower.cost), True, (245, 189, 31))
-        self.rocket_tower_button = Button(
+        self.cost2 = SMALL_FONT.render(str(CannonTower.cost), True, (245, 189, 31))
+        self.crystal_tower_button = Button(
             (self.coords[0] + 195, self.coords[1] - 60, 80, 80),
-            'rocket_tower_icon.png',
+            'crystal_tower_icon.png',
             self.buttons
         )
-        self.cost3 = SMALL_FONT.render(str(RocketTower.cost), True, (245, 189, 31))
+        self.cost3 = SMALL_FONT.render(str(CrystalTower.cost), True, (245, 189, 31))
 
     def check_click(self, click):
         if click.colliderect(self.bow_tower_button):
             if self.currency >= BowTower.cost:
                 self.spawn_tower(BowTower)
-        elif click.colliderect(self.gun_tower_button):
-            if self.currency >= BowTower.cost:
-                self.spawn_tower(BowTower)
-        elif click.colliderect(self.rocket_tower_button):
-            if self.currency >= BowTower.cost:
-                self.spawn_tower(BowTower)
+        elif click.colliderect(self.cannon_tower_button):
+            if self.currency >= CannonTower.cost:
+                self.spawn_tower(CannonTower)
+        elif click.colliderect(self.crystal_tower_button):
+            if self.currency >= CrystalTower.cost:
+                self.spawn_tower(CrystalTower)
 
     def spawn_tower(self, tower):
         tower(self.group_for_towers, self.coords, self.moblist, self.group_for_bullets)
@@ -529,12 +513,12 @@ class Game:
             Game.currency = main_data[3]
             towers_data = cur.execute('''SELECT * FROM towers
                                          WHERE slot_id = ?''', (save_slot_id,)).fetchall()
-            towers = {'bow': BowTower, 'gun': GunTower, 'rocket': RocketTower}
+            towers = {'bow': BowTower, 'cannon': CannonTower, 'crystal': CrystalTower}
 
             for _, x, y, reloading, tower_type, animation_index in towers_data:
                 tower = towers[tower_type]
-                x -= 125
-                y += 25
+                x -= tower.x_bias
+                y -= tower.y_bias
                 tower(self.towers, (x, y), self.moblist, self.bullets, reloading, animation_index)
                 for plant in self.plants:
                     if plant.rect.x == x and plant.rect.y == y:
@@ -576,9 +560,10 @@ class Game:
         menu = pygame.sprite.Group()
         menu_table = pygame.sprite.Sprite(menu)
         menu_table.rect = pygame.Rect(700, 400, 600, 450)
-        menu_table.image = load_image(os.path.join('sprites', 'main_menu.png'), -1)
-        single_player_button = Button((800, 500, 350, 90), 'start_single_game.png', menu)
-        exit_button = Button((800, 650, 350, 90), 'exit.png', menu)
+        menu_table.image = load_image(os.path.join('sprites', 'main_menu.png'))
+        singleplayer_button = Button((800, 500, 350, 90), 'start_single_game.png', menu)
+        multiplayer_button = Button((800, 650, 350, 90), 'start_online_game.png', menu)
+        exit_button = Button((800, 800, 350, 90), 'exit.png', menu)
         state = 'main_menu'
         save_slot_buttons = []
         self.screen.blit(background, (0, 0))
@@ -589,9 +574,10 @@ class Game:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     click = pygame.Rect(*event.pos, 1, 1)
                     if state == 'main_menu':
-                        if click.colliderect(single_player_button):
+                        if click.colliderect(singleplayer_button):
                             state = 'choose_save_slot_menu'
-                            single_player_button.kill()
+                            singleplayer_button.kill()
+                            multiplayer_button.kill()
                             exit_button.kill()
                             menu_table.rect.y -= 150
                             menu_table.image = load_image(os.path.join('sprites', 'save_slots_menu.png'))
@@ -604,6 +590,8 @@ class Game:
                             self.screen.blit(background, (0, 0))
                             menu.draw(self.screen)
                             pygame.display.flip()
+                        elif click.colliderect(multiplayer_button):
+                            play_online(self.screen)
                         elif click.colliderect(exit_button):
                             self.quit()
                     else:
@@ -685,7 +673,7 @@ class Game:
         menu = pygame.sprite.Group()
         menu_table = pygame.sprite.Sprite(menu)
         menu_table.rect = pygame.Rect(660, 190, 600, 700)
-        menu_table.image = load_image(os.path.join('sprites', 'pause_menu.png'), -1)
+        menu_table.image = load_image(os.path.join('sprites', 'pause_menu.png'))
         continue_button = Button((770, 300, 350, 90), 'continue.png', menu)
         music_slider = Button((800, 483, 20, 40), 'slider.png', menu)
         sounds_slider = Button((800, 619, 20, 40), 'slider.png', menu)
@@ -825,20 +813,12 @@ class Game:
 
 
 if __name__ == '__main__':
-    pygame.init()
+    #pygame.init()
     screen = pygame.display.set_mode(SIZE)
-    MOB_ANIMATIONS = load_mob_animations()
-    BULLETS_SPRITES = load_bullets_sprites()
-    MAINTOWER_IMAGE = pygame.transform.scale(load_image(os.path.join('sprites', 'main_tower.png')), (300, 300))
-    ADD_TOWER_MENU_IMAGE = load_image(os.path.join('sprites', 'add_tower_menu.png'))
-    COIN_ICON = load_image(os.path.join('sprites', 'coin.png'))
-    SMALL_COIN_ICON = pygame.transform.scale(load_image(os.path.join('sprites', 'coin.png')), (20, 20))
-    MOB_MARK_SPRITE = load_image(os.path.join('sprites', 'mark.png'))
-    CURRENCY_FONT = pygame.font.SysFont('Arial', 60)
-    SMALL_FONT = pygame.font.SysFont('Arial', 25)
     game = Game(screen)
     game.begin()
     running = True
+    fps_font = pygame.font.SysFont("Arial", 18)
     time = pygame.time.Clock()
     while running:
         time.tick(FPS)
@@ -851,5 +831,7 @@ if __name__ == '__main__':
                 break
         screen.fill('black')
         game.update_and_render()
+        fps_text = fps_font.render(str(int(time.get_fps())), True, (0, 255, 0))
+        screen.blit(fps_text, (10, 0))
         pygame.display.flip()
     pygame.quit()

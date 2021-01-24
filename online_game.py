@@ -1,16 +1,7 @@
-import pygame
 import socket
 import pickle
-import os
-import sys
-import json
-from constants import *
-from main import Button, load_image, load_animation, load_mob_animations, load_bullets_sprites, draw_health_indicator
-
-
-SERVER = '127.0.0.1'  # '109.226.242.226'  # '127.0.0.1'
-PORT = 4444
-ADDRESS = (SERVER, PORT)
+import math
+from sprites import *
 
 
 def load_mobs_data():
@@ -21,22 +12,6 @@ def load_mobs_data():
             data[mob] = json.load(info_file)
         data[mob]['animations'] = animations[mob]
     return data
-
-
-def load_towers_sprites():
-    towers_sprites = {}
-    path = os.path.join('sprites', 'towers')
-    for tower, width, height in (('bow', 250, 250), ('mortar', 255, 255)):
-        towers_sprites[tower] = load_animation(os.path.join(path, tower + '.png'), width, height)
-    return towers_sprites
-
-
-def load_mob_icons():
-    mob_icons = {}
-    path = 'mobs'
-    for mob in MOBS:
-        mob_icons[mob] = load_image(os.path.join(path, mob, 'sprites', 'icon.png'))
-    return mob_icons
 
 
 def load_road_zones():
@@ -58,6 +33,13 @@ def load_road_zones():
         p2_zone.mask = pygame.mask.from_surface(load_image(os.path.join(path_to_roads, road, 'p2_mob_spawn_zone.png')))
         zones[PLAYER_2].append(p2_zone)
     return zones
+
+
+SERVER = '127.0.0.1'  # '109.226.242.226'  # '127.0.0.1'
+PORT = 4444
+ADDRESS = (SERVER, PORT)
+MOBS_DATA = load_mobs_data()
+ROAD_ZONES = load_road_zones()
 
 
 def remake_mob_icons(player):
@@ -87,16 +69,19 @@ def draw_mob(player, mob_type, coords, state, animation_index, health, screen):
     )
 
 
-def draw_tower(player, tower_type, coords, animation_index, screen):
+def draw_tower(tower_type, coords, animation_index, screen):
     image = TOWERS_SPRITES[tower_type][animation_index]
-    if player == 1:
-        image = pygame.transform.flip(image, True, False)
     screen.blit(image, coords)
 
 
 def draw_bullet(bullet_type, coords, angle, animation_index, screen):
-    image = pygame.transform.rotate(BULLETS_SPRITES[bullet_type][animation_index], angle)
+    image = pygame.transform.rotate(BULLETS_SPRITES[bullet_type][animation_index], math.degrees(angle))
     screen.blit(image, coords)
+
+
+def draw_health_indicator(x, y, health, max_health, indicator_width, indicator_height, screen):
+    pygame.draw.rect(screen, 'red', (x, y, indicator_width, indicator_height))
+    pygame.draw.rect(screen, 'green', (x, y, indicator_width * health / max_health, indicator_height))
 
 
 class AddTowerMenu(pygame.sprite.Sprite):
@@ -122,15 +107,15 @@ class AddTowerMenu(pygame.sprite.Sprite):
             self.buttons
         )
         self.cost1 = SMALL_FONT.render('50', True, (245, 189, 31))
-        self.gun_tower_button = Button(
+        self.cannon_tower_button = Button(
             (self.coords[0] + 95, self.coords[1] - 60, 80, 80),
-            'gun_tower_icon.png',
+            'cannon_tower_icon.png',
             self.buttons
         )
         self.cost2 = SMALL_FONT.render('100', True, (245, 189, 31))
-        self.rocket_tower_button = Button(
+        self.crystal_tower_button = Button(
             (self.coords[0] + 195, self.coords[1] - 60, 80, 80),
-            'rocket_tower_icon.png',
+            'crystal_tower_icon.png',
             self.buttons
         )
         self.cost3 = SMALL_FONT.render('150', True, (245, 189, 31))
@@ -139,12 +124,12 @@ class AddTowerMenu(pygame.sprite.Sprite):
         if click.colliderect(self.bow_tower_button):
             if self.currency >= 50:
                 self.spawn_tower('bow')
-        elif click.colliderect(self.gun_tower_button):
+        elif click.colliderect(self.cannon_tower_button):
             if self.currency >= 100:
-                self.spawn_tower('bow')
-        elif click.colliderect(self.rocket_tower_button):
+                self.spawn_tower('cannon')
+        elif click.colliderect(self.crystal_tower_button):
             if self.currency >= 150:
-                self.spawn_tower('bow')
+                self.spawn_tower('crystal')
 
     def spawn_tower(self, tower):
         self.client.send(str.encode(f"spawn_tower {tower} {';'.join(map(str, self.coords))}"))
@@ -215,6 +200,13 @@ class SpawnMobMenu(pygame.sprite.Group):
         super().draw(screen)
         if self.selected_mob:
             screen.blit(MOB_ICONS[self.selected_mob], self.mouse_pos)
+
+
+class Button(pygame.sprite.Sprite):
+    def __init__(self, rect, filename, group=None):
+        super().__init__(group)
+        self.rect = pygame.Rect(*rect)
+        self.image = load_image(os.path.join('sprites', 'buttons', filename))
 
 
 class Game:
@@ -291,8 +283,8 @@ class Game:
         self.screen.blit(currency_text, (130, 40))
 
     def render_main_towers(self):
-        screen.blit(MAINTOWER_IMAGE, (-50, 370))
-        screen.blit(MAINTOWER_IMAGE, (1680, 380))
+        self.screen.blit(MAINTOWER_IMAGE, (-50, 370))
+        self.screen.blit(MAINTOWER_IMAGE, (1680, 380))
         # Отрисовка хп
         pygame.draw.rect(self.screen, 'blue', (45, 400, 110, 20))
         pygame.draw.rect(self.screen, 'blue', (1775, 410, 110, 20))
@@ -309,14 +301,15 @@ class Game:
             self.currency = data[5] if self.player_index == PLAYER_1 else data[6]
             # Если противник поставил башню, то нужно удалить соответствующий плент:
             if len(data[1]) != Game.total_plants - Game.plants_count:
-                towers_data = [tower_data[2] for tower_data in data[1]]
+                towers_positions = [tower_data[1] for tower_data in data[1]]
                 for plant in self.plants:
-                    if (plant.rect.x, plant.rect.y - 50) in towers_data:
-                        self.plants.remove(plant)
-                        Game.plants_count -= 1
+                    for tower_position in towers_positions:
+                        if abs(plant.rect.x - tower_position[0]) <= 50 and abs(plant.rect.y - tower_position[1]) <= 50:
+                            self.plants.remove(plant)
+                            Game.plants_count -= 1
             # Отрисовка полученных объектов:
-            screen.fill('black')
-            self.screen.blit(MAP_IMAGE, (0, 0))
+            self.screen.fill('black')
+            self.screen.blit(MULTIPLAYER_MAP_IMAGE, (0, 0))
             self.render_main_towers()
             for mob_data in data[0]:
                 draw_mob(*mob_data, self.screen)
@@ -371,17 +364,4 @@ def play_online(screen):
 if __name__ == '__main__':
     pygame.init()
     screen = pygame.display.set_mode(SIZE)
-    MAP_IMAGE = load_image(os.path.join('online_game_map', 'image.png'))
-    ADD_TOWER_MENU_IMAGE = load_image(os.path.join('sprites', 'add_tower_menu.png'))
-    MOB_ICONS = load_mob_icons()
-    COIN_ICON = load_image(os.path.join('sprites', 'coin.png'))
-    SMALL_COIN_ICON = pygame.transform.scale(load_image(os.path.join('sprites', 'coin.png')), (20, 20))
-    MOBS_DATA = load_mobs_data()
-    ROAD_ZONES = load_road_zones()
-    TOWERS_SPRITES = load_towers_sprites()
-    BULLETS_SPRITES = load_bullets_sprites()
-    MAINTOWER_IMAGE = pygame.transform.scale(load_image(os.path.join('sprites', 'main_tower.png')), (300, 300))
-    CURRENCY_FONT = pygame.font.SysFont('Arial', 60)
-    SMALL_FONT = pygame.font.SysFont('Arial', 25)
-    WAITING_PLAYERS_SCREEN = load_image(os.path.join('sprites', 'waiting_players_screen.png'))
     play_online(screen)
