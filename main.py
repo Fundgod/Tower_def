@@ -196,18 +196,18 @@ class BowTower(pygame.sprite.Sprite):
     shooting_range = 600
     damage = 10
     x_bias = 125
-    y_bias = 25
+    y_bias = -25
 
     def __init__(self, group, coords, moblist, bullets_group, reloading=0, animation_index=0):
         super().__init__(group)
-        self.coords = (coords[0] + self.x_bias, coords[1] - self.y_bias)
+        self.coords = (coords[0] + self.x_bias, coords[1] + self.y_bias)
         self.moblist = moblist
         self.bullets_group = bullets_group
         self.reloading = reloading
         self.animation_index = animation_index
         self.image = BOW_TOWER_IMAGE
         self.rect = pygame.Rect(self.coords[0] - self.x_bias,
-                                self.coords[1] - self.y_bias,
+                                self.coords[1] + self.y_bias,
                                 self.width,
                                 self.height)
 
