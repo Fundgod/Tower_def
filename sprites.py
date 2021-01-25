@@ -87,6 +87,7 @@ SMALL_COIN_ICON = pygame.transform.scale(load_image(os.path.join('sprites', 'coi
 MOB_MARK_SPRITE = load_image(os.path.join('sprites', 'mark.png'))
 CURRENCY_FONT = pygame.font.SysFont('Arial', 60)
 SMALL_FONT = pygame.font.SysFont('Arial', 25)
+BLACK_SCREEN = load_image(os.path.join('sprites', 'black_screen.png'))
 # Спрайты для мультиплеера:
 MULTIPLAYER_MAP_IMAGE = load_image(os.path.join('online_game_map', 'image.png'))
 MOB_ICONS = load_mob_icons()

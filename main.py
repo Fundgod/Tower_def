@@ -346,6 +346,9 @@ class MainTower(pygame.sprite.Sprite):
         self.shooting_range = 600
         self.damage = 10
 
+    def set_position(self, coords):
+        self.coords = self.rect.x, self.rect.y = coords
+
     def update(self):
         if self.health > 0:
             pygame.draw.rect(screen, 'blue', (int(self.coords[0] + 95), int(self.coords[1]) + 25, 110, 20))
@@ -402,12 +405,15 @@ class Bullet(pygame.sprite.Sprite):
         flight_time = distance_to_target / self.velocity
         self.end_coords = mob.get_position(flight_time)
         d_x, d_y = self.end_coords[0] - self.coords[0], self.end_coords[1] - self.coords[1]
-        distance = math.hypot(d_x, d_y)
+        distance = math.hypot(d_x, d_y) + 1
         self.velocity = distance / flight_time
         self.step = (d_x / distance * self.velocity,
                      d_y / distance * self.velocity)
         self.steps_to_target = distance / self.velocity
-        self.angle = -math.atan(d_y / d_x)
+        try:
+            self.angle = -math.atan(d_y / d_x)
+        except ZeroDivisionError:
+            self.angle = math.pi / 2 * (d_y / abs(d_y))
         if d_x < 0:
             self.angle += math.pi
 
@@ -444,11 +450,14 @@ class HomingBullet(pygame.sprite.Sprite):
         x, y = self.coords
         x1, y1 = self.mob.coords
         d_x, d_y = x1 - x, y - y1
-        distance = math.hypot(d_x, d_y)
+        distance = math.hypot(d_x, d_y) + 1
         self.coords[0] += self.velocity * (d_x / distance)
         self.coords[1] += self.velocity * (-d_y / distance)
         self.rect.x, self.rect.y = self.coords
-        self.angle = math.atan(d_y / d_x)
+        try:
+            self.angle = math.atan(d_y / d_x)
+        except ZeroDivisionError:
+            self.angle = math.pi / 2 * (d_y / abs(d_y))
         if d_x > 0:
             self.angle += math.pi
         self.image = pygame.transform.rotate(BULLETS_SPRITES[self.type][self.animation_index], math.degrees(self.angle))
@@ -592,6 +601,7 @@ class Game:
         self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
         self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
         self.time_in_game = 0
+        self.level_completed = False
 
     def load_progress(self, save_slot_id):
         con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
@@ -601,6 +611,9 @@ class Game:
         if main_data and all(map(lambda v: v is not None, main_data)):  # Если в этом слоте лежат данные
             MainTower.health = main_data[0]
             self.level = main_data[1]
+            self.mt.set_position(MAINTOWERS_POSITIONS[self.level])
+            self.map = Map(self.level)
+            self.plants = self.load_plants()
             self.time_in_game += main_data[2]
             Game.currency = main_data[3]
             towers_data = cur.execute('''SELECT * FROM towers
@@ -742,14 +755,33 @@ class Game:
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
 
+    def start_next_level(self):
+        fade(self.screen, BLACK_SCREEN, 1920, 1080, (0, 0), 100)
+        if self.level < 4:
+            self.map = Map(self.level)
+            self.plants = self.load_plants()
+            self.towers.empty()
+            MainTower.health = MainTower.full_hp
+            self.add_tower_menus.empty()
+            self.moblist.clear()
+            self.mt.set_position(MAINTOWERS_POSITIONS[self.level])
+            self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
+            self.time_in_game = 0
+            self.level_completed = False
+            self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
+            self.mobs_spawn_thread.start()
+            self.map.render(self.screen)
+        else:
+            self.end_game(win=True)
+
     def end_game(self, win=False):
         Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
-        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080, fade_level=150)
+        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080, 150)
         if win:
             end_screen_image = 'win.png'
         else:
             end_screen_image = 'game_over.png'
-        fade(self.screen, load_image(os.path.join('sprites', end_screen_image)), 800, 827, coords=(560, 170), fade_level=500)
+        fade(self.screen, load_image(os.path.join('sprites', end_screen_image)), 800, 827, (560, 170), 500)
         time = pygame.time.Clock()
         time_to_restart = 240
         while time_to_restart > 0:
@@ -761,7 +793,7 @@ class Game:
             pygame.display.flip()
         self.begin()
 
-    def spawn_mobs(self, start):
+    def spawn_mobs(self, start=0):
         spawn_list = SPAWN_DATA[self.level]
         for index, (interval, road_index, mob_type) in enumerate(spawn_list):
             if interval <= start:
@@ -782,16 +814,17 @@ class Game:
                     little_intervals_counter += 1
                     self.time_in_game += 0.1
             self.mob_query.append((mob_type, road_index))
+        self.level_completed = True
 
     def on_click(self, pos):
         click = pygame.Rect(*pos, 1, 1)
         for add_tower_menu in self.add_tower_menus:
             add_tower_menu.check_click(click)
-            self.close_add_tower_menu()
+            self.add_tower_menus.empty()
             return
         # Если пользователь нажал в любое место экрана, но не на кнопку,
         # то открытое меню добавления башни, если оно есть, закроется:
-        self.close_add_tower_menu()
+        self.add_tower_menus.empty()
         if click.colliderect(self.pause_button):
             self.update_and_render()
             self.pause()
@@ -912,10 +945,10 @@ class Game:
         self.buttons.draw(self.screen)
         self.render_currency()
         self.mob_mark.update_and_render(self.screen)
-
-    def close_add_tower_menu(self):
-        for add_tower_menu in self.add_tower_menus:
-            add_tower_menu.kill()
+        # Если уровень пройден, переходим на новый:
+        if not any(self.mobs.values()) and self.level_completed:
+            self.level += 1
+            self.start_next_level()
 
     def save_progress(self):
         con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
