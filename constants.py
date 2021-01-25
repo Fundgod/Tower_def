@@ -11,7 +11,11 @@ HORNY_DOG = 'horny_dog'
 CRYSTAL_GOLEM = 'crystal_golem'
 MOBS = (MASK, SKILLET, STONE_GOLEM, BOAR_WARRIOR, HORNY_DOG, CRYSTAL_GOLEM)
 CACHE_VELOCITY = 1 / 30
-
+MAINTOWERS_POSITIONS = {
+    1: (20, 670),
+    2: (-10, 340),
+    3: (-10, 353)
+}
 SPAWN_DATA = {
     1: (
         (1, 0, SKILLET),
@@ -25,6 +29,17 @@ SPAWN_DATA = {
         (3, 0, BOAR_WARRIOR)
     ),
     2: (
+        (1, 0, STONE_GOLEM),
+        (2, 1, CRYSTAL_GOLEM),
+        (3, 0, HORNY_DOG),
+        (1, 1, BOAR_WARRIOR),
+        (2, 0, MASK),
+        (3, 1, SKILLET),
+        (1, 0, HORNY_DOG),
+        (2, 1, SKILLET),
+        (3, 0, BOAR_WARRIOR)
+    ),
+    3: (
         (1, 0, STONE_GOLEM),
         (2, 1, CRYSTAL_GOLEM),
         (3, 0, HORNY_DOG),

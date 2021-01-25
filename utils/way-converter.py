@@ -23,4 +23,4 @@ def conv_way(filename):
         f.write('\n'.join([f'{i};{j}' for i, j in way]))
 
 
-conv_way('2.png')
+conv_way('way2.png')

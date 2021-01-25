@@ -27,7 +27,7 @@ except socket.error:
     print('Socket error')
     sys.exit(1)
 
-s.listen(7)
+s.listen(6)
 print('Waiting for connection')
 
 
@@ -72,13 +72,10 @@ def clients_accepting():
             room.add_player(conn)
             Thread(target=client_processing, args=[conn, PLAYER_2, room]).start()
             room.start_game()
-        elif len(rooms) < 3:
+        else:
             room = Room(conn, rooms)
             rooms.append(room)
             Thread(target=client_processing, args=[conn, PLAYER_1, room]).start()
-        else:
-            conn.sendall(str.encode('abort'))
-            conn.close()
 
 
 def client_processing(conn, player, room):
