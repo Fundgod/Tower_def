@@ -33,8 +33,9 @@ class Map:
     def __init__(self, index):
         self.dir = f'map{index}'
         self.ways = self.load_ways()
+        self.image = load_image(os.path.join(self.dir, 'image.png'))
         self.sprite = self.load_sprite()
-
+    
     def load_ways(self):
         ways = []
         path_to_roads = os.path.join(self.dir, 'ways')
@@ -53,7 +54,7 @@ class Map:
     def load_sprite(self):
         group = pygame.sprite.Group()
         sprite = pygame.sprite.Sprite(group)
-        sprite.image = load_image(os.path.join(self.dir, 'image.png'))
+        sprite.image = self.image
         sprite.rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
         return group
 
@@ -770,13 +771,13 @@ class Game:
             self.level_completed = False
             self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
             self.mobs_spawn_thread.start()
-            self.map.render(self.screen)
+            fade(self.screen, self.map.image, 1920, 1080, fade_level=50)
         else:
             self.end_game(win=True)
 
     def end_game(self, win=False):
         Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
-        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080, 150)
+        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080, fade_level=150)
         if win:
             end_screen_image = 'win.png'
         else:
