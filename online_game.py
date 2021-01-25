@@ -219,10 +219,7 @@ class Game:
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.connect(ADDRESS)
         data = pickle.loads(self.client.recv(1024))
-        if isinstance(data, int):
-            self.player_index = data
-        else:
-            self.handle_server_abort()
+        self.player_index = data
         remake_mob_icons(self.player_index)
         self.add_tower_menus = pygame.sprite.Group()
         self.main_towers_hp = {
@@ -304,7 +301,6 @@ class Game:
                 towers_positions = [tower_data[1] for tower_data in data[1]]
                 for plant in self.plants:
                     for tower_position in towers_positions:
-                        print()
                         if abs(plant.rect.x - tower_position[0]) <= 20 and abs(plant.rect.y - tower_position[1]) <= 100:
                             self.plants.remove(plant)
                             Game.plants_count -= 1
@@ -330,11 +326,6 @@ class Game:
     def close_add_tower_menu(self):
         for add_tower_menu in self.add_tower_menus:
             add_tower_menu.kill()
-
-    def handle_server_abort(self):
-        print('Here should be a screen with title like: server overflow, wait a bit and try again')
-        pygame.quit()
-        sys.exit(0)
 
 
 def play_online(screen):

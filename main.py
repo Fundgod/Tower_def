@@ -35,7 +35,7 @@ class Map:
         self.ways = self.load_ways()
         self.image = load_image(os.path.join(self.dir, 'image.png'))
         self.sprite = self.load_sprite()
-    
+
     def load_ways(self):
         ways = []
         path_to_roads = os.path.join(self.dir, 'ways')
@@ -687,6 +687,10 @@ class Game:
         fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080)
 
     def begin(self):
+        def wait_and_close_server_error(background):
+            sleep(3)
+            self.screen.blit(background.subsurface((700, 330, 600, 100)), (700, 330))
+
         # Фоновая музыка меню
         background_menu_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_sound.wav'))
         background_menu_sound.play()
@@ -726,7 +730,12 @@ class Game:
                             menu.draw(self.screen)
                             pygame.display.flip()
                         elif click.colliderect(multiplayer_button):
-                            play_online(self.screen)
+                            try:
+                                play_online(self.screen)
+                            except Exception:
+                                server_error = load_image(os.path.join('sprites', 'server_error.png'))
+                                self.screen.blit(server_error, (700, 330))
+                                Thread(target=wait_and_close_server_error, args=[background]).start()
                         elif click.colliderect(exit_button):
                             self.quit()
                     else:
