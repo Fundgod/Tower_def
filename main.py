@@ -113,7 +113,7 @@ class Mob(pygame.sprite.Sprite):
         with open(os.path.join('mobs', type, 'info.json'), 'r', encoding='utf-8') as info_file:
             self.info = json.load(info_file)
         self.width, self.height = self.info[self.state]['width'], self.info[self.state]['height']
-        self.velocity = self.info['velocity'] / FPS
+        self.velocity = self.info['velocity'] / FPS * 10
         self.health = self.max_health = self.info['health']
         self.damage = self.info['damage']
         self.cost = self.info['cost']
@@ -334,10 +334,10 @@ class MainTower(pygame.sprite.Sprite):
     health = 1000
     full_hp = 1000
 
-    def __init__(self, bullets_group, moblist,  group):
+    def __init__(self, coords, bullets_group, moblist,  group):
         super().__init__(group)
-        self.rect = pygame.Rect(20, 670, 10, 10)
-        self.coords = (20, 670)
+        self.coords = coords
+        self.rect = pygame.Rect(*self.coords, 10, 10)
         self.image = MAINTOWER_IMAGE
         self.moblist = moblist
         self.bullets_group = bullets_group
@@ -588,7 +588,7 @@ class Game:
         self.on_pause = False
         self.mob_query = []
         self.moblist = []
-        self.mt = MainTower(self.bullets, self.moblist, self.main_tower)
+        self.mt = MainTower(MAINTOWERS_POSITIONS[self.level], self.bullets, self.moblist, self.main_tower)
         self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
         self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
         self.time_in_game = 0
@@ -742,10 +742,14 @@ class Game:
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
 
-    def game_over(self):
+    def end_game(self, win=False):
         Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
         fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080, fade_level=150)
-        fade(self.screen, load_image(os.path.join('sprites', 'game_over.png')), 800, 827, coords=(560, 170), fade_level=500)
+        if win:
+            end_screen_image = 'win.png'
+        else:
+            end_screen_image = 'game_over.png'
+        fade(self.screen, load_image(os.path.join('sprites', end_screen_image)), 800, 827, coords=(560, 170), fade_level=500)
         time = pygame.time.Clock()
         time_to_restart = 240
         while time_to_restart > 0:
@@ -845,26 +849,21 @@ class Game:
                         self.save_progress()
                         self.quit()
                 elif event.type == pygame.MOUSEMOTION:
+                    cursor_x_coord = event.pos[0] - volume_changing_bias
+                    if 800 > cursor_x_coord:
+                        next_pos = 800
+                    elif 1115 < cursor_x_coord:
+                        next_pos = 1115
+                    else:
+                        next_pos = cursor_x_coord
+                    volume = (next_pos - 799) / 315
                     if changing_music_volume:
-                        cursor_x_coord = event.pos[0] - volume_changing_bias
-                        if 800 > cursor_x_coord:
-                            next_pos = 800
-                        elif 1115 < cursor_x_coord:
-                            next_pos = 1115
-                        else:
-                            next_pos = cursor_x_coord
                         music_slider.rect.x = next_pos
-                        menu.draw(self.screen)
+                        self.background_fight_sound.set_volume(volume)
                     elif changing_sounds_volume:
-                        cursor_x_coord = event.pos[0] - volume_changing_bias
-                        if 800 > cursor_x_coord:
-                            next_pos = 800
-                        elif 1115 < cursor_x_coord:
-                            next_pos = 1115
-                        else:
-                            next_pos = cursor_x_coord
                         sounds_slider.rect.x = next_pos
-                        menu.draw(self.screen)
+                        self.background_fight_sound.set_volume(volume)
+                    menu.draw(self.screen)
                 elif event.type == pygame.MOUSEBUTTONUP:
                     changing_music_volume = False
                     changing_sounds_volume = False
@@ -895,7 +894,7 @@ class Game:
         if self.mt.health < 0:
             self.on_pause = True
             self.mt.health = self.mt.full_hp
-            self.game_over()
+            self.end_game()
         # Обновление и отрисовка игровых объектов
         self.main_tower.update()
         self.main_tower.draw(self.screen)
