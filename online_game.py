@@ -2,6 +2,9 @@ import socket
 import pickle
 import math
 from sprites import *
+from exceptions import *
+from time import sleep
+from threading import Thread
 
 
 def load_mobs_data():
@@ -82,6 +85,14 @@ def draw_bullet(bullet_type, coords, angle, animation_index, screen):
 def draw_health_indicator(x, y, health, max_health, indicator_width, indicator_height, screen):
     pygame.draw.rect(screen, 'red', (x, y, indicator_width, indicator_height))
     pygame.draw.rect(screen, 'green', (x, y, indicator_width * health / max_health, indicator_height))
+
+
+def start_or_stop_music(music, stop=False):
+    for i in range(0, 10):
+        music.set_volume(1 + 0.1 * stop * i)
+        sleep(0.1)
+    if stop:
+        music.stop()
 
 
 class AddTowerMenu(pygame.sprite.Sprite):
@@ -209,6 +220,72 @@ class Button(pygame.sprite.Sprite):
         self.image = load_image(os.path.join('sprites', 'buttons', filename))
 
 
+class Pause:
+    def __init__(self, screen, background_fight_sound):
+        self.screen = screen
+        self.game = background_fight_sound
+        self.menu = pygame.sprite.Group()
+        self.menu_table = pygame.sprite.Sprite(self.menu)
+        self.menu_table.rect = pygame.Rect(660, 190, 600, 700)
+        self.menu_table.image = load_image(os.path.join('sprites', 'pause_menu.png'))
+        self.continue_button = Button((770, 300, 350, 90), 'continue.png', self.menu)
+        self.music_slider = Button((1115, 483, 20, 40), 'slider.png', self.menu)
+        self.sounds_slider = Button((1115, 619, 20, 40), 'slider.png', self.menu)
+        self.exit_button = Button((770, 680, 350, 90), 'exit.png', self.menu)
+        self.pause_button_rect = pygame.Rect(1800, 30, 80, 80)
+        self.pause_button_image = load_image(os.path.join('sprites', 'buttons', 'pause.png'))
+        self.changing_music_volume = False
+        self.changing_sounds_volume = False
+        self.volume_changing_bias = 0
+        self.on_pause = False
+
+    def check_click_down(self, click):
+        if self.on_pause:
+            if click.colliderect(self.continue_button):
+                self.on_pause = False
+            elif click.colliderect(self.music_slider):
+                self.changing_music_volume = True
+                self.volume_changing_bias = click.x - self.music_slider.rect.x
+            elif click.colliderect(self.sounds_slider):
+                self.changing_sounds_volume = True
+                self.volume_changing_bias = click.x - self.sounds_slider.rect.x
+            elif click.colliderect(self.exit_button):
+                raise Exit
+        else:
+            if click.colliderect(self.pause_button_rect):
+                self.on_pause = True
+
+    def check_release(self, pos):
+        cursor_x_coord = pos[0] - self.volume_changing_bias
+        if 800 > cursor_x_coord:
+            next_pos = 800
+        elif 1115 < cursor_x_coord:
+            next_pos = 1115
+        else:
+            next_pos = cursor_x_coord
+        volume = (next_pos - 799) / 315
+        if self.changing_music_volume:
+            self.music_slider.rect.x = next_pos
+            self.game.background_fight_sound.set_volume(volume)
+        elif self.changing_sounds_volume:
+            self.sounds_slider.rect.x = next_pos
+            #self.background_fight_sound.set_volume(volume)
+        self.menu.draw(self.screen)
+
+    def check_click_up(self):
+        self.changing_music_volume = False
+        self.changing_sounds_volume = False
+
+    def render(self):
+        if self.on_pause:
+            self.menu.draw(self.screen)
+        else:
+            self.screen.blit(self.pause_button_image, (1800, 10))
+
+    def __bool__(self):
+        return self.on_pause
+
+
 class Game:
     total_plants = 2
     plants_count = 2
@@ -228,6 +305,11 @@ class Game:
         }
         self.currency = 100
         self.spawn_mob_menu = SpawnMobMenu(self.player_index)
+        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
+        self.background_fight_sound.set_volume(0)
+        self.background_fight_sound.play()
+        Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
+        self.pause = Pause(self.screen, self)
 
     def load_plants(self):
         plants = pygame.sprite.Group()
@@ -245,23 +327,32 @@ class Game:
 
     def on_click_down(self, pos):
         click = pygame.Rect(*pos, 1, 1)
-        self.spawn_mob_menu.check_click_down(click)
-        for add_tower_menu in self.add_tower_menus:
-            add_tower_menu.check_click(click)
-            self.close_add_tower_menu()
-            return
-        self.close_add_tower_menu()
-        for plant in self.plants:
-            if click.colliderect(plant) and plant.free and plant.player == self.player_index:
-                AddTowerMenu(plant, self.client, self.currency, self.add_tower_menus)
+        self.pause.check_click_down(click)
+        if not self.pause:
+            self.spawn_mob_menu.check_click_down(click)
+            for add_tower_menu in self.add_tower_menus:
+                add_tower_menu.check_click(click)
+                self.close_add_tower_menu()
                 return
+            self.close_add_tower_menu()
+            for plant in self.plants:
+                if click.colliderect(plant) and plant.free and plant.player == self.player_index:
+                    AddTowerMenu(plant, self.client, self.currency, self.add_tower_menus)
+                    return
 
     def on_release(self, pos):
-        self.spawn_mob_menu.set_mouse_pos(pos)
+        if self.pause:
+            self.pause.check_release(pos)
+        else:
+            self.spawn_mob_menu.set_mouse_pos(pos)
 
     def on_click_up(self, pos):
-        click = pygame.Rect(*pos, 1, 1)
-        return self.spawn_mob_menu.check_click_up(click)
+        if self.pause:
+            self.pause.check_click_up()
+            return 'ok'
+        else:
+            click = pygame.Rect(*pos, 1, 1)
+            return self.spawn_mob_menu.check_click_up(click)
 
     def get_data_from_server(self, my_data='ok'):
         self.client.send(str.encode(my_data))
@@ -271,8 +362,11 @@ class Game:
             data.append(packet)
             if len(packet) != 2048:
                 break
-        data = pickle.loads(b"".join(data))
-        return data
+        try:
+            data = pickle.loads(b"".join(data))
+            return data
+        except EOFError:
+            raise OpponentExitError
 
     def render_currency(self):
         self.screen.blit(COIN_ICON, (20, 20))
@@ -320,6 +414,7 @@ class Game:
                 add_tower_menu.draw_buttons(self.screen)
             self.render_currency()
             self.spawn_mob_menu.draw(self.screen)
+            self.pause.render()
         else:
             self.screen.blit(WAITING_PLAYERS_SCREEN, (0, 0))
 
@@ -329,27 +424,38 @@ class Game:
 
 
 def play_online(screen):
-    game = Game(screen)
-    running = True
-    time = pygame.time.Clock()
-    fps_font = pygame.font.SysFont("Arial", 18)
-    user_action = 'ok'
-    while running:
-        game.update_and_render(user_action)
+    try:
+        game = Game(screen)
+        running = True
+        time = pygame.time.Clock()
+        fps_font = pygame.font.SysFont("Arial", 18)
         user_action = 'ok'
-        time.tick(FPS)
-        for event in pygame.event.get():
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                game.on_click_down(event.pos)
-            elif event.type == pygame.MOUSEMOTION:
-                game.on_release(event.pos)
-            elif event.type == pygame.MOUSEBUTTONUP:
-                user_action = game.on_click_up(event.pos)
-            elif event.type == pygame.QUIT:
-                running = False
-        fps_text = fps_font.render(str(int(time.get_fps())), True, (0, 255, 0))
-        screen.blit(fps_text, (10, 0))
-        pygame.display.flip()
+        while running:
+            game.update_and_render(user_action)
+            user_action = 'ok'
+            time.tick(FPS)
+            for event in pygame.event.get():
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    game.on_click_down(event.pos)
+                elif event.type == pygame.MOUSEMOTION:
+                    game.on_release(event.pos)
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    user_action = game.on_click_up(event.pos)
+                elif event.type == pygame.QUIT:
+                    running = False
+            fps_text = fps_font.render(str(int(time.get_fps())), True, (0, 255, 0))
+            screen.blit(fps_text, (10, 0))
+            pygame.display.flip()
+    except Win:
+        return 'win'
+    except Exit:
+        return 'exit'
+    except Lose:
+        return 'game_over'
+    except OpponentExitError:
+        return 'opponent_disconnected'
+    except Exception:
+        raise ServerError
 
 
 if __name__ == '__main__':

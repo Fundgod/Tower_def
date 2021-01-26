@@ -5,6 +5,7 @@ from threading import Thread
 from time import sleep
 from sprites import *
 from online_game import play_online
+from exceptions import ServerError
 
 
 def draw_health_indicator(x, y, health, max_health, indicator_width, indicator_height, screen):
@@ -20,13 +21,19 @@ def start_or_stop_music(music, stop=False):
         music.stop()
 
 
-def fade(screen, image, w, h, coords=(0, 0), fade_level=300):
-    image = pygame.transform.scale(image, (w, h))
-    for alpha in range(0, fade_level):
-        image.set_alpha(alpha)
-        screen.blit(image, coords)
+def fade(screen, image, speed=1.):
+    alpha = 0
+    while alpha < 255:
+        image.set_alpha(int(alpha))
+        screen.blit(image, (0, 0))
         pygame.display.update()
         pygame.time.delay(5)
+        alpha += speed
+        for event in pygame.event.get():
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                image.set_alpha(255)
+                screen.blit(image, (0, 0))
+                return
 
 
 class Map:
@@ -73,7 +80,7 @@ class Map:
 
 class Mob(pygame.sprite.Sprite):
     def __init__(self, group, way, type, road_index, way_index, x=None, y=None, pos=0, state='move',
-                 animation_index=0., passed_steps=0, total_steps=0, health=None, tagged=False):
+                 animation_index=0., passed_steps=0, total_steps=0, health=None, tagged=False, target=None):
         super().__init__(group)
         self.type = type
         self.road_index = road_index
@@ -87,6 +94,7 @@ class Mob(pygame.sprite.Sprite):
         self.animation_index = animation_index
         self.steps = [passed_steps, total_steps]
         self.tagged = tagged
+        self.target = target
         if x is None:
             self.coords = list(self.way[self.pos])
         else:
@@ -175,7 +183,7 @@ class Mob(pygame.sprite.Sprite):
                 self.coords[1] += self.y_velocity
                 self.rect.x, self.rect.y = self.coords[0] - self.width / 2, self.coords[1] - self.height / 2
             except IndexError:
-                self.attack(MainTower)
+                self.attack(self.target)
         elif self.state != 'death':
             self.kill()
         elif round(self.animation_index) == self.animation_length:
@@ -370,8 +378,8 @@ class MainTower(pygame.sprite.Sprite):
         else:
             self.reloading -= 1
 
-    def hit(damage):
-        MainTower.health -= damage
+    def hit(self, damage):
+        self.health -= damage
 
 
 class Bullet(pygame.sprite.Sprite):
@@ -579,7 +587,6 @@ class Game:
     def __init__(self, screen):
         self.screen = screen
         self.level = 1
-        self.map = Map(self.level)
         self.mobs = {
             MASK: pygame.sprite.Group(),
             SKILLET: pygame.sprite.Group(),
@@ -588,7 +595,6 @@ class Game:
             HORNY_DOG: pygame.sprite.Group(),
             CRYSTAL_GOLEM: pygame.sprite.Group()
         }
-        self.plants = self.load_plants()
         self.towers = pygame.sprite.Group()
         self.bullets = pygame.sprite.Group()
         self.buttons = pygame.sprite.Group()
@@ -599,9 +605,20 @@ class Game:
         self.mob_query = []
         self.moblist = []
         self.mt = MainTower(MAINTOWERS_POSITIONS[self.level], self.bullets, self.moblist, self.main_tower)
-        self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
         self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
+
+    def reset(self):
+        self.map = Map(self.level)
+        self.plants = self.load_plants()
+        self.mt.health = MainTower.full_hp
+        self.add_tower_menus.empty()
+        self.towers.empty()
+        self.bullets.empty()
+        self.moblist.clear()
+        self.mt.set_position(MAINTOWERS_POSITIONS[self.level])
+        self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
         self.time_in_game = 0
+        self.on_pause = False
         self.level_completed = False
 
     def load_progress(self, save_slot_id):
@@ -610,7 +627,7 @@ class Game:
         main_data = cur.execute('''SELECT main_tower_hp, level, play_time, currency FROM slots 
                                    WHERE id = ?''', (save_slot_id,)).fetchone()
         if main_data and all(map(lambda v: v is not None, main_data)):  # Если в этом слоте лежат данные
-            MainTower.health = main_data[0]
+            self.mt.health = main_data[0]
             self.level = main_data[1]
             self.mt.set_position(MAINTOWERS_POSITIONS[self.level])
             self.map = Map(self.level)
@@ -635,7 +652,7 @@ class Game:
             mobs_data = cur.execute('''SELECT * FROM mobs
                                        WHERE slot_id = ?''', (save_slot_id,)).fetchall()
             for mob_data in mobs_data:
-                mob = Mob(self.mobs[mob_data[1]], self.map.get_way(*mob_data[2:4]), *mob_data[1:])
+                mob = Mob(self.mobs[mob_data[1]], self.map.get_way(*mob_data[2:4]), *mob_data[1:], target=self.mt)
                 self.moblist.append(mob)
 
             bullets_data = cur.execute('''SELECT * FROM bullets
@@ -684,13 +701,14 @@ class Game:
             frame_index += 1
             pygame.display.flip()
 
-        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080)
+        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')))
 
     def begin(self):
         def wait_and_close_server_error(background):
             sleep(3)
             self.screen.blit(background.subsurface((700, 330, 600, 100)), (700, 330))
 
+        self.reset()
         # Фоновая музыка меню
         background_menu_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_sound.wav'))
         background_menu_sound.play()
@@ -731,8 +749,10 @@ class Game:
                             pygame.display.flip()
                         elif click.colliderect(multiplayer_button):
                             try:
-                                play_online(self.screen)
-                            except Exception:
+                                Thread(target=start_or_stop_music, args=(background_menu_sound, True),
+                                       daemon=True).start()
+                                self.online_match()
+                            except ServerError:
                                 server_error = load_image(os.path.join('sprites', 'server_error.png'))
                                 self.screen.blit(server_error, (700, 330))
                                 Thread(target=wait_and_close_server_error, args=[background]).start()
@@ -757,51 +777,30 @@ class Game:
         self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
         self.background_fight_sound.set_volume(0)
         self.background_fight_sound.play()
-        self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
         Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
 
         self.save_slot = save_slot
         spawner_start = self.load_progress(save_slot)
+        self.level_completed = False
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
 
     def start_next_level(self):
-        fade(self.screen, BLACK_SCREEN, 1920, 1080, (0, 0), 100)
+        fade(self.screen, BLACK_SCREEN, 2.5)
         if self.level < 4:
-            self.map = Map(self.level)
-            self.plants = self.load_plants()
-            self.towers.empty()
-            MainTower.health = MainTower.full_hp
-            self.add_tower_menus.empty()
-            self.moblist.clear()
-            self.mt.set_position(MAINTOWERS_POSITIONS[self.level])
-            self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
-            self.time_in_game = 0
-            self.level_completed = False
+            self.reset()
             self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
             self.mobs_spawn_thread.start()
-            fade(self.screen, self.map.image, 1920, 1080, fade_level=50)
+            fade(self.screen, self.map.image, 5)
         else:
-            self.end_game(win=True)
+            self.end_game('win.png')
 
-    def end_game(self, win=False):
-        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
-        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080, fade_level=150)
-        if win:
-            end_screen_image = 'win.png'
+    def online_match(self):
+        exit_state = play_online(self.screen)
+        if exit_state == 'exit':
+            self.begin()
         else:
-            end_screen_image = 'game_over.png'
-        fade(self.screen, load_image(os.path.join('sprites', end_screen_image)), 800, 827, (560, 170), 500)
-        time = pygame.time.Clock()
-        time_to_restart = 240
-        while time_to_restart > 0:
-            time.tick(FPS)
-            for event in pygame.event.get():
-                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
-                    time_to_restart = 0
-            time_to_restart -= 1
-            pygame.display.flip()
-        self.begin()
+            self.end_game(image=exit_state + '.png')
 
     def spawn_mobs(self, start=0):
         spawn_list = SPAWN_DATA[self.level]
@@ -867,8 +866,10 @@ class Game:
         menu_table.rect = pygame.Rect(660, 190, 600, 700)
         menu_table.image = load_image(os.path.join('sprites', 'pause_menu.png'))
         continue_button = Button((770, 300, 350, 90), 'continue.png', menu)
-        music_slider = Button((800, 483, 20, 40), 'slider.png', menu)
-        sounds_slider = Button((800, 619, 20, 40), 'slider.png', menu)
+        x = 800 + self.background_fight_sound.get_volume() * 315
+        music_slider = Button((x, 483, 20, 40), 'slider.png', menu)
+        x1 = 800 + self.background_fight_sound.get_volume() * 315
+        sounds_slider = Button((x1, 619, 20, 40), 'slider.png', menu)
         exit_button = Button((770, 680, 350, 90), 'exit.png', menu)
         menu.draw(self.screen)
         changing_music_volume = False
@@ -905,7 +906,6 @@ class Game:
                         self.background_fight_sound.set_volume(volume)
                     elif changing_sounds_volume:
                         sounds_slider.rect.x = next_pos
-                        self.background_fight_sound.set_volume(volume)
                     menu.draw(self.screen)
                 elif event.type == pygame.MOUSEBUTTONUP:
                     changing_music_volume = False
@@ -929,13 +929,12 @@ class Game:
         if self.mob_query:
             mob_type, road_index = self.mob_query.pop(-1)
             way, way_index = self.map.get_way(road_index)
-            mob = Mob(self.mobs[mob_type], way, mob_type, road_index, way_index)
+            mob = Mob(self.mobs[mob_type], way, mob_type, road_index, way_index, target=self.mt)
             self.moblist.append(mob)
         # Отрисовка карты
         self.map.render(self.screen)
         # Проверка на проигранность игры
         if self.mt.health < 0:
-            self.on_pause = True
             self.mt.health = self.mt.full_hp
             self.end_game()
         # Обновление и отрисовка игровых объектов
@@ -961,16 +960,13 @@ class Game:
             self.start_next_level()
 
     def save_progress(self):
+        self.reset_progress()
         con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
         cur = con.cursor()
         # Сохранение основной информации:
-        cur.execute('''DELETE FROM slots
-                       WHERE id = ?''', (self.save_slot,))
         cur.execute('INSERT INTO slots VALUES (?, ?, ?, ?, ?)',
                     (self.save_slot, self.mt.health, self.level, self.time_in_game, self.currency))
         # Сохранение информации о мобах:
-        cur.execute('''DELETE FROM mobs
-                       WHERE slot_id = ?''', (self.save_slot,))
         mobs_data = []
         for mob in self.moblist:
             if mob.state != 'death':
@@ -979,16 +975,12 @@ class Game:
             cur.execute('INSERT INTO mobs VALUES ' + ', '.join([str(mob_data) for mob_data in mobs_data]))
         self.moblist = [mob for mob in self.moblist if mob.state != 'death']
         # Сохранение информации о снарядах:
-        cur.execute('''DELETE FROM bullets
-                       WHERE slot_id = ?''', (self.save_slot,))
         bullets_data = []
         for bullet in self.bullets:
             bullets_data.append((self.save_slot, *bullet.get_state(), self.moblist.index(bullet.mob)))
         if bullets_data:
             cur.execute('INSERT INTO bullets VALUES ' + ', '.join([str(bullet_data) for bullet_data in bullets_data]))
         # Сохранение информации о башнях:
-        cur.execute('''DELETE FROM towers
-                       WHERE slot_id = ?''', (self.save_slot,))
         towers_data = []
         for tower in self.towers:
             towers_data.append((self.save_slot, *tower.get_state()))
@@ -996,6 +988,34 @@ class Game:
             cur.execute('INSERT INTO towers VALUES ' + ', '.join([str(tower_data) for tower_data in towers_data]))
         con.commit()
         con.close()
+
+    def reset_progress(self):
+        con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
+        cur = con.cursor()
+        cur.execute('''DELETE FROM slots
+                       WHERE id = ?''', (self.save_slot,))
+        cur.execute('''DELETE FROM mobs
+                       WHERE slot_id = ?''', (self.save_slot,))
+        cur.execute('''DELETE FROM bullets
+                       WHERE slot_id = ?''', (self.save_slot,))
+        cur.execute('''DELETE FROM towers
+                       WHERE slot_id = ?''', (self.save_slot,))
+        con.commit()
+        con.close()
+
+    def end_game(self, image='game_over.png'):
+        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
+        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 2)
+        fade(self.screen, load_image(os.path.join('sprites', image)), 0.5)
+        self.level = 1
+        self.kill_all_mobs()
+        self.reset_progress()
+        self.begin()
+
+    def kill_all_mobs(self):
+        self.moblist.clear()
+        for mob in self.mobs.keys():
+            self.mobs[mob].empty()
 
     def quit(self):
         pygame.quit()
