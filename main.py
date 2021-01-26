@@ -606,6 +606,7 @@ class Game:
         self.moblist = []
         self.mt = MainTower(MAINTOWERS_POSITIONS[self.level], self.bullets, self.moblist, self.main_tower)
         self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
+        self.playing = False
 
     def reset(self):
         self.map = Map(self.level)
@@ -614,7 +615,7 @@ class Game:
         self.add_tower_menus.empty()
         self.towers.empty()
         self.bullets.empty()
-        self.moblist.clear()
+        self.kill_all_mobs()
         self.mt.set_position(MAINTOWERS_POSITIONS[self.level])
         self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
         self.time_in_game = 0
@@ -782,6 +783,7 @@ class Game:
         self.save_slot = save_slot
         spawner_start = self.load_progress(save_slot)
         self.level_completed = False
+        self.playing = True
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
 
@@ -789,6 +791,7 @@ class Game:
         fade(self.screen, BLACK_SCREEN, 2.5)
         if self.level < 4:
             self.reset()
+            self.playing = True
             self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
             self.mobs_spawn_thread.start()
             fade(self.screen, self.map.image, 5)
@@ -817,13 +820,16 @@ class Game:
         for interval, road_index, mob_type in spawn_list:
             little_intervals_count = interval / 0.1
             little_intervals_counter = 0
-            while little_intervals_count - little_intervals_counter > 0.05:
+            while little_intervals_count - little_intervals_counter > 0.05 and self.playing:
                 sleep(0.1)
                 if not self.on_pause:
                     little_intervals_counter += 1
                     self.time_in_game += 0.1
+            if not self.playing:
+                break
             self.mob_query.append((mob_type, road_index))
-        self.level_completed = True
+        else:
+            self.level_completed = True
 
     def on_click(self, pos):
         click = pygame.Rect(*pos, 1, 1)
@@ -891,7 +897,10 @@ class Game:
                         volume_changing_bias = event.pos[0] - sounds_slider.rect.x
                     elif click.colliderect(exit_button):
                         self.save_progress()
-                        self.quit()
+                        self.playing = False
+                        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
+                        self.begin()
+                        return
                 elif event.type == pygame.MOUSEMOTION:
                     cursor_x_coord = event.pos[0] - volume_changing_bias
                     if 800 > cursor_x_coord:
