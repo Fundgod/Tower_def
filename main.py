@@ -305,9 +305,10 @@ class CrystalTower(pygame.sprite.Sprite):
     height = 300
     time_to_reload = 30
     shooting_range = 700
-    damage = 5
+    damage = 7
     x_bias = 115
     y_bias = -50
+    animation_length = 27
 
     def __init__(self, group, coords, moblist, bullets_group, reloading=0, animation_index=0):
         super().__init__(group)
@@ -332,8 +333,8 @@ class CrystalTower(pygame.sprite.Sprite):
                     return
         else:
             self.reloading -= 1
-        self.animation_index = (self.animation_index + 1) % 1
-        self.image = TOWERS_SPRITES['crystal'][self.animation_index]
+        self.animation_index = (self.animation_index + 0.3) % self.animation_length
+        self.image = TOWERS_SPRITES['crystal'][int(self.animation_index)]
 
     def get_state(self):
         return *self.coords, self.reloading, 'crystal', self.animation_index
@@ -529,10 +530,14 @@ class AddTowerMenu(pygame.sprite.Sprite):
                 self.spawn_tower(CrystalTower)
 
     def spawn_tower(self, tower):
-        tower(self.group_for_towers, self.coords, self.moblist, self.group_for_bullets)
+
+        if self.plant.tower is not None:
+            if self.plant.tower.cost >= tower.cost:
+                return
+            self.plant.tower.kill()
+        self.plant.tower = tower(self.group_for_towers, self.coords, self.moblist, self.group_for_bullets)
         Game.currency -= tower.cost
-        self.plant.free = False
-        self.plant.kill()
+        self.plant.image = load_image(os.path.join('sprites', 'nothing.png'))
 
     def draw_buttons(self, surface):
         self.buttons.draw(surface)
@@ -643,11 +648,11 @@ class Game:
                 tower = towers[tower_type]
                 x -= tower.x_bias
                 y -= tower.y_bias
-                tower(self.towers, (x, y), self.moblist, self.bullets, reloading, animation_index)
                 for plant in self.plants:
                     if plant.rect.x == x and plant.rect.y == y:
                         break
-                plant.free = False
+                tower = tower(self.towers, (x, y), self.moblist, self.bullets, reloading, animation_index)
+                plant.tower = tower
                 plant.kill()
 
             mobs_data = cur.execute('''SELECT * FROM mobs
@@ -678,7 +683,7 @@ class Game:
                 plant_sprite = pygame.sprite.Sprite(plants)
                 plant_sprite.rect = pygame.Rect(*plant_coords, 250, 250)
                 plant_sprite.image = plant_image
-                plant_sprite.free = True
+                plant_sprite.tower = None
         return plants
 
     def load_screen(self):
@@ -703,6 +708,13 @@ class Game:
             pygame.display.flip()
 
         fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')))
+
+    def play_fight_music(self):
+        # Мелодия боя
+        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
+        self.background_fight_sound.set_volume(0)
+        self.background_fight_sound.play()
+        Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
 
     def begin(self):
         def wait_and_close_server_error(background):
@@ -750,9 +762,9 @@ class Game:
                             pygame.display.flip()
                         elif click.colliderect(multiplayer_button):
                             try:
-                                Thread(target=start_or_stop_music, args=(background_menu_sound, True),
-                                       daemon=True).start()
+                                self.play_fight_music()
                                 self.online_match()
+                                return
                             except ServerError:
                                 server_error = load_image(os.path.join('sprites', 'server_error.png'))
                                 self.screen.blit(server_error, (700, 330))
@@ -774,11 +786,7 @@ class Game:
             pygame.display.flip()
 
     def start(self, save_slot):
-        # Мелодия боя
-        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
-        self.background_fight_sound.set_volume(0)
-        self.background_fight_sound.play()
-        Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
+        self.play_fight_music()
 
         self.save_slot = save_slot
         spawner_start = self.load_progress(save_slot)
@@ -845,7 +853,7 @@ class Game:
             self.pause()
             return
         for plant in self.plants:
-            if click.colliderect(plant) and plant.free:
+            if click.colliderect(plant):
                 AddTowerMenu(plant, self.moblist, self.currency, self.towers, self.bullets, self.add_tower_menus)
                 return
         for mob in self.moblist:
@@ -999,18 +1007,21 @@ class Game:
         con.close()
 
     def reset_progress(self):
-        con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
-        cur = con.cursor()
-        cur.execute('''DELETE FROM slots
-                       WHERE id = ?''', (self.save_slot,))
-        cur.execute('''DELETE FROM mobs
-                       WHERE slot_id = ?''', (self.save_slot,))
-        cur.execute('''DELETE FROM bullets
-                       WHERE slot_id = ?''', (self.save_slot,))
-        cur.execute('''DELETE FROM towers
-                       WHERE slot_id = ?''', (self.save_slot,))
-        con.commit()
-        con.close()
+        try:
+            con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
+            cur = con.cursor()
+            cur.execute('''DELETE FROM slots
+                           WHERE id = ?''', (self.save_slot,))
+            cur.execute('''DELETE FROM mobs
+                           WHERE slot_id = ?''', (self.save_slot,))
+            cur.execute('''DELETE FROM bullets
+                           WHERE slot_id = ?''', (self.save_slot,))
+            cur.execute('''DELETE FROM towers
+                           WHERE slot_id = ?''', (self.save_slot,))
+            con.commit()
+            con.close()
+        except AttributeError:  # Если не выбран текущий слот сохранения
+            return
 
     def end_game(self, image='game_over.png'):
         Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()

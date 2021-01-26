@@ -313,6 +313,7 @@ class CrystalTower:
     damage = 5
     x_bias = 125
     y_bias = -50
+    animation_length = 27
 
     def __init__(self, player, coords, game):
         self.player = player
@@ -334,7 +335,7 @@ class CrystalTower:
                     return
         else:
             self.reloading -= 1
-        self.animation_index = (self.animation_index + 1) % 1
+        self.animation_index = (self.animation_index + 0.3) % self.animation_length
 
     def get_state(self):
         return 'crystal', self.get_coords(), int(self.animation_index)
@@ -422,6 +423,7 @@ class HomingBullet:
         self.type = type
         self.mob = mob
         self.velocity = 5
+        self.angle = 0
         self.animation_index = 0
         self.animation_length = 5
         self.killed = False
@@ -546,7 +548,17 @@ class OnlineGame:
             tower_type = data[0]
             coords = tuple(map(int, data[1].split(';')))
             tower = {'bow': BowTower, 'cannon': CannonTower, 'crystal': CrystalTower}[tower_type]
-            self.towers[player].append(tower(player, coords, self))
+            towers = self.towers[player]
+            x, y = coords
+            for i in range(len(towers)):
+                x1, y1 = towers[i].get_coords()
+                if abs(x - x1) <= 100 and abs(y - y1) <= 100:
+                    if towers[i].cost < tower.cost:
+                        towers[i] = tower(player, coords, self)
+                    else:
+                        break
+            else:
+                towers.append(tower(player, coords, self))
             self.players_cache[player] -= tower.cost
         else:  # action == 'mark_mob'
             for mob in self.mobs[player]:
