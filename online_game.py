@@ -145,8 +145,7 @@ class AddTowerMenu(pygame.sprite.Sprite):
     def spawn_tower(self, tower):
         self.client.send(str.encode(f"spawn_tower {tower} {';'.join(map(str, self.coords))}"))
         self.plant.free = False
-        self.plant.kill()
-        Game.plants_count -= 1
+        self.plant.image = load_image(os.path.join('sprites', 'nothing.png'))
 
     def draw_buttons(self, surface):
         self.buttons.draw(surface)
@@ -214,7 +213,7 @@ class SpawnMobMenu(pygame.sprite.Group):
 
 
 class Button(pygame.sprite.Sprite):
-    def __init__(self, rect, filename, group=None):
+    def __init__(self, rect, filename, group):
         super().__init__(group)
         self.rect = pygame.Rect(*rect)
         self.image = load_image(os.path.join('sprites', 'buttons', filename))
@@ -288,15 +287,14 @@ class Pause:
 
 class Game:
     total_plants = 2
-    plants_count = 2
 
     def __init__(self, screen):
         self.screen = screen
         self.plants = self.load_plants()
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.connect(ADDRESS)
-        data = pickle.loads(self.client.recv(1024))
-        self.player_index = data
+        self.data_from_server = pickle.loads(self.client.recv(1024))
+        self.player_index = self.data_from_server
         remake_mob_icons(self.player_index)
         self.add_tower_menus = pygame.sprite.Group()
         self.main_towers_hp = {
@@ -310,6 +308,8 @@ class Game:
         self.background_fight_sound.play()
         Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
         self.pause = Pause(self.screen, self)
+        self.buttons = pygame.sprite.Group()
+        self.back_button = Button((20, 20, 270, 100), 'back.png', self.buttons)
 
     def load_plants(self):
         plants = pygame.sprite.Group()
@@ -328,7 +328,7 @@ class Game:
     def on_click_down(self, pos):
         click = pygame.Rect(*pos, 1, 1)
         self.pause.check_click_down(click)
-        if not self.pause:
+        if not self.pause and self.data_from_server != 'Waiting for players':
             self.spawn_mob_menu.check_click_down(click)
             for add_tower_menu in self.add_tower_menus:
                 add_tower_menu.check_click(click)
@@ -336,9 +336,12 @@ class Game:
                 return
             self.close_add_tower_menu()
             for plant in self.plants:
-                if click.colliderect(plant) and plant.free and plant.player == self.player_index:
+                if click.colliderect(plant) and plant.player == self.player_index:
                     AddTowerMenu(plant, self.client, self.currency, self.add_tower_menus)
                     return
+        elif self.data_from_server == 'Waiting for players':
+            if click.colliderect(self.back_button):
+                raise Exit
 
     def on_release(self, pos):
         if self.pause:
@@ -384,29 +387,29 @@ class Game:
 
     def update_and_render(self, user_action='ok'):
         # Получение данных:
-        data = self.get_data_from_server(user_action)
-        if data != 'Waiting for players':
+        self.data_from_server = self.get_data_from_server(user_action)
+        if self.data_from_server != 'Waiting for players':
             # Установка полученных значений:
-            self.main_towers_hp[PLAYER_1] = data[3]
-            self.main_towers_hp[PLAYER_2] = data[4]
-            self.currency = data[5] if self.player_index == PLAYER_1 else data[6]
+            self.main_towers_hp[PLAYER_1] = self.data_from_server[3]
+            self.main_towers_hp[PLAYER_2] = self.data_from_server[4]
+            self.currency = self.data_from_server[5] if self.player_index == PLAYER_1 else self.data_from_server[6]
             # Если противник поставил башню, то нужно удалить соответствующий плент:
-            if len(data[1]) != Game.total_plants - Game.plants_count:
-                towers_positions = [tower_data[1] for tower_data in data[1]]
+            if len(self.data_from_server[1]) != Game.total_plants - len([plant for plant in self.plants if plant.free]):
+                towers_positions = [tower_data[1] for tower_data in self.data_from_server[1]]
                 for plant in self.plants:
-                    for tower_position in towers_positions:
-                        if abs(plant.rect.x - tower_position[0]) <= 20 and abs(plant.rect.y - tower_position[1]) <= 100:
-                            self.plants.remove(plant)
-                            Game.plants_count -= 1
+                    for x, y in towers_positions:
+                        if plant.free and abs(plant.rect.x - x) <= 20 and abs(plant.rect.y - y) <= 100:
+                            plant.free = False
+                            plant.image = load_image(os.path.join('sprites', 'nothing.png'))
             # Отрисовка полученных объектов:
             self.screen.fill('black')
             self.screen.blit(MULTIPLAYER_MAP_IMAGE, (0, 0))
             self.render_main_towers()
-            for mob_data in data[0]:
+            for mob_data in self.data_from_server[0]:
                 draw_mob(*mob_data, self.screen)
-            for tower_data in data[1]:
+            for tower_data in self.data_from_server[1]:
                 draw_tower(*tower_data, self.screen)
-            for bullet_data in data[2]:
+            for bullet_data in self.data_from_server[2]:
                 draw_bullet(*bullet_data, self.screen)
             self.plants.draw(self.screen)
             self.add_tower_menus.draw(self.screen)
@@ -417,6 +420,7 @@ class Game:
             self.pause.render()
         else:
             self.screen.blit(WAITING_PLAYERS_SCREEN, (0, 0))
+            self.buttons.draw(self.screen)
 
     def close_add_tower_menu(self):
         for add_tower_menu in self.add_tower_menus:
