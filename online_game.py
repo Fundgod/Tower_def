@@ -370,6 +370,8 @@ class Game:
             return data
         except EOFError:
             raise OpponentExitError
+        except ConnectionResetError:
+            raise OpponentExitError
 
     def render_currency(self):
         self.screen.blit(COIN_ICON, (20, 20))

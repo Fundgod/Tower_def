@@ -1,4 +1,3 @@
-from threading import Thread
 import socket
 import sys
 import os
@@ -7,6 +6,7 @@ import json
 import math
 import random
 import pickle
+from threading import Thread
 from constants import *
 
 

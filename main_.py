@@ -5,7 +5,6 @@ from threading import Thread
 from time import sleep
 from sprites import *
 from online_game import play_online
-from exceptions import ServerError
 
 
 def draw_health_indicator(x, y, health, max_health, indicator_width, indicator_height, screen):
@@ -14,39 +13,26 @@ def draw_health_indicator(x, y, health, max_health, indicator_width, indicator_h
 
 
 def start_or_stop_music(music, stop=False):
-    max_volume = 10
+    for i in range(0, 10):
+        music.set_volume(1 + 0.1 * stop * i)
+        sleep(0.1)
     if stop:
-        max_volume = int(music.get_volume() * 10)
-    try:
-        for i in range(0, max_volume):
-            music.set_volume(1 + 0.1 * stop * i)
-            sleep(0.1)
-        if stop:
-            music.stop()
-    except pygame.error:
-        return
+        music.stop()
 
 
-def fade(screen, image, speed=1.):
-    alpha = 0
-    while alpha < 255:
-        image.set_alpha(int(alpha))
-        screen.blit(image, (0, 0))
+def fade(screen, image, w, h, coords=(0, 0), fade_level=300):
+    image = pygame.transform.scale(image, (w, h))
+    for alpha in range(0, fade_level):
+        image.set_alpha(alpha)
+        screen.blit(image, coords)
         pygame.display.update()
         pygame.time.delay(5)
-        alpha += speed
-        for event in pygame.event.get():
-            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
-                image.set_alpha(255)
-                screen.blit(image, (0, 0))
-                return
 
 
 class Map:
     def __init__(self, index):
         self.dir = f'map{index}'
         self.ways = self.load_ways()
-        self.image = load_image(os.path.join(self.dir, 'image.png'))
         self.sprite = self.load_sprite()
 
     def load_ways(self):
@@ -67,7 +53,7 @@ class Map:
     def load_sprite(self):
         group = pygame.sprite.Group()
         sprite = pygame.sprite.Sprite(group)
-        sprite.image = self.image
+        sprite.image = load_image(os.path.join(self.dir, 'image.png'))
         sprite.rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
         return group
 
@@ -86,7 +72,7 @@ class Map:
 
 class Mob(pygame.sprite.Sprite):
     def __init__(self, group, way, type, road_index, way_index, x=None, y=None, pos=0, state='move',
-                 animation_index=0., passed_steps=0, total_steps=0, health=None, tagged=False, target=None):
+                 animation_index=0., passed_steps=0, total_steps=0, health=None, tagged=False):
         super().__init__(group)
         self.type = type
         self.road_index = road_index
@@ -100,7 +86,6 @@ class Mob(pygame.sprite.Sprite):
         self.animation_index = animation_index
         self.steps = [passed_steps, total_steps]
         self.tagged = tagged
-        self.target = target
         if x is None:
             self.coords = list(self.way[self.pos])
         else:
@@ -189,7 +174,7 @@ class Mob(pygame.sprite.Sprite):
                 self.coords[1] += self.y_velocity
                 self.rect.x, self.rect.y = self.coords[0] - self.width / 2, self.coords[1] - self.height / 2
             except IndexError:
-                self.attack(self.target)
+                self.attack(MainTower)
         elif self.state != 'death':
             self.kill()
         elif round(self.animation_index) == self.animation_length:
@@ -311,10 +296,9 @@ class CrystalTower(pygame.sprite.Sprite):
     height = 300
     time_to_reload = 30
     shooting_range = 700
-    damage = 7
+    damage = 5
     x_bias = 115
     y_bias = -50
-    animation_length = 27
 
     def __init__(self, group, coords, moblist, bullets_group, reloading=0, animation_index=0):
         super().__init__(group)
@@ -339,8 +323,8 @@ class CrystalTower(pygame.sprite.Sprite):
                     return
         else:
             self.reloading -= 1
-        self.animation_index = (self.animation_index + 0.3) % self.animation_length
-        self.image = TOWERS_SPRITES['crystal'][int(self.animation_index)]
+        self.animation_index = (self.animation_index + 1) % 1
+        self.image = TOWERS_SPRITES['crystal'][self.animation_index]
 
     def get_state(self):
         return *self.coords, self.reloading, 'crystal', self.animation_index
@@ -362,9 +346,6 @@ class MainTower(pygame.sprite.Sprite):
         self.shooting_range = 600
         self.damage = 10
 
-    def set_position(self, coords):
-        self.coords = self.rect.x, self.rect.y = coords
-
     def update(self):
         if self.health > 0:
             pygame.draw.rect(screen, 'blue', (int(self.coords[0] + 95), int(self.coords[1]) + 25, 110, 20))
@@ -385,8 +366,8 @@ class MainTower(pygame.sprite.Sprite):
         else:
             self.reloading -= 1
 
-    def hit(self, damage):
-        self.health -= damage
+    def hit(damage):
+        MainTower.health -= damage
 
 
 class Bullet(pygame.sprite.Sprite):
@@ -421,15 +402,12 @@ class Bullet(pygame.sprite.Sprite):
         flight_time = distance_to_target / self.velocity
         self.end_coords = mob.get_position(flight_time)
         d_x, d_y = self.end_coords[0] - self.coords[0], self.end_coords[1] - self.coords[1]
-        distance = math.hypot(d_x, d_y) + 1
+        distance = math.hypot(d_x, d_y)
         self.velocity = distance / flight_time
         self.step = (d_x / distance * self.velocity,
                      d_y / distance * self.velocity)
         self.steps_to_target = distance / self.velocity
-        try:
-            self.angle = -math.atan(d_y / d_x)
-        except ZeroDivisionError:
-            self.angle = math.pi / 2 * (d_y / abs(d_y))
+        self.angle = -math.atan(d_y / d_x)
         if d_x < 0:
             self.angle += math.pi
 
@@ -466,14 +444,11 @@ class HomingBullet(pygame.sprite.Sprite):
         x, y = self.coords
         x1, y1 = self.mob.coords
         d_x, d_y = x1 - x, y - y1
-        distance = math.hypot(d_x, d_y) + 1
+        distance = math.hypot(d_x, d_y)
         self.coords[0] += self.velocity * (d_x / distance)
         self.coords[1] += self.velocity * (-d_y / distance)
         self.rect.x, self.rect.y = self.coords
-        try:
-            self.angle = math.atan(d_y / d_x)
-        except ZeroDivisionError:
-            self.angle = math.pi / 2 * (d_y / abs(d_y))
+        self.angle = math.atan(d_y / d_x)
         if d_x > 0:
             self.angle += math.pi
         self.image = pygame.transform.rotate(BULLETS_SPRITES[self.type][self.animation_index], math.degrees(self.angle))
@@ -490,13 +465,14 @@ class AddTowerMenu(pygame.sprite.Sprite):
     width = 400
     height = 180
 
-    def __init__(self, plant, moblist, group_for_towers, group_for_bullets, group):
+    def __init__(self, plant, moblist, currency, group_for_towers, group_for_bullets, group):
         super().__init__(group)
         self.coords = plant.rect.x, plant.rect.y
         self.plant = plant
         self.moblist = moblist
         self.group_for_towers = group_for_towers
         self.group_for_bullets = group_for_bullets
+        self.currency = currency
         self.image = ADD_TOWER_MENU_IMAGE
         self.width, self.height = AddTowerMenu.width, AddTowerMenu.height
         self.rect = pygame.Rect(self.coords[0] - 70,
@@ -525,24 +501,20 @@ class AddTowerMenu(pygame.sprite.Sprite):
 
     def check_click(self, click):
         if click.colliderect(self.bow_tower_button):
-            if Game.currency >= BowTower.cost:
+            if self.currency >= BowTower.cost:
                 self.spawn_tower(BowTower)
         elif click.colliderect(self.cannon_tower_button):
-            if Game.currency >= CannonTower.cost:
+            if self.currency >= CannonTower.cost:
                 self.spawn_tower(CannonTower)
         elif click.colliderect(self.crystal_tower_button):
-            if Game.currency >= CrystalTower.cost:
+            if self.currency >= CrystalTower.cost:
                 self.spawn_tower(CrystalTower)
 
     def spawn_tower(self, tower):
-
-        if self.plant.tower is not None:
-            if self.plant.tower.cost >= tower.cost:
-                return
-            self.plant.tower.kill()
-        self.plant.tower = tower(self.group_for_towers, self.coords, self.moblist, self.group_for_bullets)
+        tower(self.group_for_towers, self.coords, self.moblist, self.group_for_bullets)
         Game.currency -= tower.cost
-        self.plant.image = load_image(os.path.join('sprites', 'nothing.png'))
+        self.plant.free = False
+        self.plant.kill()
 
     def draw_buttons(self, surface):
         self.buttons.draw(surface)
@@ -597,6 +569,7 @@ class Game:
     def __init__(self, screen):
         self.screen = screen
         self.level = 1
+        self.map = Map(self.level)
         self.mobs = {
             MASK: pygame.sprite.Group(),
             SKILLET: pygame.sprite.Group(),
@@ -605,6 +578,7 @@ class Game:
             HORNY_DOG: pygame.sprite.Group(),
             CRYSTAL_GOLEM: pygame.sprite.Group()
         }
+        self.plants = self.load_plants()
         self.towers = pygame.sprite.Group()
         self.bullets = pygame.sprite.Group()
         self.buttons = pygame.sprite.Group()
@@ -615,23 +589,9 @@ class Game:
         self.mob_query = []
         self.moblist = []
         self.mt = MainTower(MAINTOWERS_POSITIONS[self.level], self.bullets, self.moblist, self.main_tower)
-        self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
-        self.playing = False
-
-    def reset(self):
-        self.map = Map(self.level)
-        Game.currency = 100
-        self.plants = self.load_plants()
-        self.mt.health = MainTower.full_hp
-        self.add_tower_menus.empty()
-        self.towers.empty()
-        self.bullets.empty()
-        self.kill_all_mobs()
-        self.mt.set_position(MAINTOWERS_POSITIONS[self.level])
         self.tagged_mob = None  # Помеченный моб - тот, в которого в первую очередь стреляют башни
+        self.mob_mark = MobMark()  # Крестик, которым можно помечать мобов
         self.time_in_game = 0
-        self.on_pause = False
-        self.level_completed = False
 
     def load_progress(self, save_slot_id):
         con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
@@ -639,11 +599,8 @@ class Game:
         main_data = cur.execute('''SELECT main_tower_hp, level, play_time, currency FROM slots 
                                    WHERE id = ?''', (save_slot_id,)).fetchone()
         if main_data and all(map(lambda v: v is not None, main_data)):  # Если в этом слоте лежат данные
-            self.mt.health = main_data[0]
+            MainTower.health = main_data[0]
             self.level = main_data[1]
-            self.mt.set_position(MAINTOWERS_POSITIONS[self.level])
-            self.map = Map(self.level)
-            self.plants = self.load_plants()
             self.time_in_game += main_data[2]
             Game.currency = main_data[3]
             towers_data = cur.execute('''SELECT * FROM towers
@@ -654,17 +611,17 @@ class Game:
                 tower = towers[tower_type]
                 x -= tower.x_bias
                 y -= tower.y_bias
+                tower(self.towers, (x, y), self.moblist, self.bullets, reloading, animation_index)
                 for plant in self.plants:
                     if plant.rect.x == x and plant.rect.y == y:
                         break
-                tower = tower(self.towers, (x, y), self.moblist, self.bullets, reloading, animation_index)
-                plant.tower = tower
+                plant.free = False
                 plant.kill()
 
             mobs_data = cur.execute('''SELECT * FROM mobs
                                        WHERE slot_id = ?''', (save_slot_id,)).fetchall()
             for mob_data in mobs_data:
-                mob = Mob(self.mobs[mob_data[1]], self.map.get_way(*mob_data[2:4]), *mob_data[1:], target=self.mt)
+                mob = Mob(self.mobs[mob_data[1]], self.map.get_way(*mob_data[2:4]), *mob_data[1:])
                 self.moblist.append(mob)
 
             bullets_data = cur.execute('''SELECT * FROM bullets
@@ -689,7 +646,7 @@ class Game:
                 plant_sprite = pygame.sprite.Sprite(plants)
                 plant_sprite.rect = pygame.Rect(*plant_coords, 250, 250)
                 plant_sprite.image = plant_image
-                plant_sprite.tower = None
+                plant_sprite.free = True
         return plants
 
     def load_screen(self):
@@ -713,21 +670,9 @@ class Game:
             frame_index += 1
             pygame.display.flip()
 
-        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')))
-
-    def play_fight_music(self):
-        # Мелодия боя
-        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
-        self.background_fight_sound.set_volume(0)
-        self.background_fight_sound.play()
-        Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
+        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080)
 
     def begin(self):
-        def wait_and_close_server_error(background):
-            sleep(3)
-            self.screen.blit(background.subsurface((700, 330, 600, 100)), (700, 330))
-
-        self.reset()
         # Фоновая музыка меню
         background_menu_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_sound.wav'))
         background_menu_sound.play()
@@ -767,14 +712,7 @@ class Game:
                             menu.draw(self.screen)
                             pygame.display.flip()
                         elif click.colliderect(multiplayer_button):
-                            try:
-                                self.play_fight_music()
-                                self.online_match()
-                                return
-                            except ServerError:
-                                server_error = load_image(os.path.join('sprites', 'server_error.png'))
-                                self.screen.blit(server_error, (700, 330))
-                                Thread(target=wait_and_close_server_error, args=[background]).start()
+                            play_online(self.screen)
                         elif click.colliderect(exit_button):
                             self.quit()
                     else:
@@ -792,34 +730,38 @@ class Game:
             pygame.display.flip()
 
     def start(self, save_slot):
-        self.play_fight_music()
+        # Мелодия боя
+        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
+        self.background_fight_sound.set_volume(0)
+        self.background_fight_sound.play()
+        self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
+        Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
 
         self.save_slot = save_slot
         spawner_start = self.load_progress(save_slot)
-        self.level_completed = False
-        self.playing = True
         self.mobs_spawn_thread = Thread(target=self.spawn_mobs, args=[spawner_start], daemon=True)
         self.mobs_spawn_thread.start()
 
-    def start_next_level(self):
-        fade(self.screen, BLACK_SCREEN, 2.5)
-        if self.level < 4:
-            self.reset()
-            self.playing = True
-            self.mobs_spawn_thread = Thread(target=self.spawn_mobs, daemon=True)
-            self.mobs_spawn_thread.start()
-            fade(self.screen, self.map.image, 5)
+    def end_game(self, win=False):
+        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
+        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 1920, 1080, fade_level=150)
+        if win:
+            end_screen_image = 'win.png'
         else:
-            self.end_game('win.png')
+            end_screen_image = 'game_over.png'
+        fade(self.screen, load_image(os.path.join('sprites', end_screen_image)), 800, 827, coords=(560, 170), fade_level=500)
+        time = pygame.time.Clock()
+        time_to_restart = 240
+        while time_to_restart > 0:
+            time.tick(FPS)
+            for event in pygame.event.get():
+                if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                    time_to_restart = 0
+            time_to_restart -= 1
+            pygame.display.flip()
+        self.begin()
 
-    def online_match(self):
-        exit_state = play_online(self.screen)
-        if exit_state == 'exit':
-            self.begin()
-        else:
-            self.end_game(image=exit_state + '.png')
-
-    def spawn_mobs(self, start=0):
+    def spawn_mobs(self, start):
         spawn_list = SPAWN_DATA[self.level]
         for index, (interval, road_index, mob_type) in enumerate(spawn_list):
             if interval <= start:
@@ -834,33 +776,29 @@ class Game:
         for interval, road_index, mob_type in spawn_list:
             little_intervals_count = interval / 0.1
             little_intervals_counter = 0
-            while little_intervals_count - little_intervals_counter > 0.05 and self.playing:
+            while little_intervals_count - little_intervals_counter > 0.05:
                 sleep(0.1)
                 if not self.on_pause:
                     little_intervals_counter += 1
                     self.time_in_game += 0.1
-            if not self.playing:
-                break
             self.mob_query.append((mob_type, road_index))
-        else:
-            self.level_completed = True
 
     def on_click(self, pos):
         click = pygame.Rect(*pos, 1, 1)
         for add_tower_menu in self.add_tower_menus:
             add_tower_menu.check_click(click)
-            self.add_tower_menus.empty()
+            self.close_add_tower_menu()
             return
         # Если пользователь нажал в любое место экрана, но не на кнопку,
         # то открытое меню добавления башни, если оно есть, закроется:
-        self.add_tower_menus.empty()
+        self.close_add_tower_menu()
         if click.colliderect(self.pause_button):
             self.update_and_render()
             self.pause()
             return
         for plant in self.plants:
-            if click.colliderect(plant):
-                AddTowerMenu(plant, self.moblist, self.towers, self.bullets, self.add_tower_menus)
+            if click.colliderect(plant) and plant.free:
+                AddTowerMenu(plant, self.moblist, self.currency, self.towers, self.bullets, self.add_tower_menus)
                 return
         for mob in self.moblist:
             if click.colliderect(mob):
@@ -886,10 +824,8 @@ class Game:
         menu_table.rect = pygame.Rect(660, 190, 600, 700)
         menu_table.image = load_image(os.path.join('sprites', 'pause_menu.png'))
         continue_button = Button((770, 300, 350, 90), 'continue.png', menu)
-        x = 800 + self.background_fight_sound.get_volume() * 315
-        music_slider = Button((x, 483, 20, 40), 'slider.png', menu)
-        x1 = 800 + self.background_fight_sound.get_volume() * 315
-        sounds_slider = Button((x1, 619, 20, 40), 'slider.png', menu)
+        music_slider = Button((800, 483, 20, 40), 'slider.png', menu)
+        sounds_slider = Button((800, 619, 20, 40), 'slider.png', menu)
         exit_button = Button((770, 680, 350, 90), 'exit.png', menu)
         menu.draw(self.screen)
         changing_music_volume = False
@@ -911,10 +847,7 @@ class Game:
                         volume_changing_bias = event.pos[0] - sounds_slider.rect.x
                     elif click.colliderect(exit_button):
                         self.save_progress()
-                        self.playing = False
-                        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
-                        self.begin()
-                        return
+                        self.quit()
                 elif event.type == pygame.MOUSEMOTION:
                     cursor_x_coord = event.pos[0] - volume_changing_bias
                     if 800 > cursor_x_coord:
@@ -929,6 +862,7 @@ class Game:
                         self.background_fight_sound.set_volume(volume)
                     elif changing_sounds_volume:
                         sounds_slider.rect.x = next_pos
+                        self.background_fight_sound.set_volume(volume)
                     menu.draw(self.screen)
                 elif event.type == pygame.MOUSEBUTTONUP:
                     changing_music_volume = False
@@ -952,12 +886,13 @@ class Game:
         if self.mob_query:
             mob_type, road_index = self.mob_query.pop(-1)
             way, way_index = self.map.get_way(road_index)
-            mob = Mob(self.mobs[mob_type], way, mob_type, road_index, way_index, target=self.mt)
+            mob = Mob(self.mobs[mob_type], way, mob_type, road_index, way_index)
             self.moblist.append(mob)
         # Отрисовка карты
         self.map.render(self.screen)
         # Проверка на проигранность игры
         if self.mt.health < 0:
+            self.on_pause = True
             self.mt.health = self.mt.full_hp
             self.end_game()
         # Обновление и отрисовка игровых объектов
@@ -977,19 +912,22 @@ class Game:
         self.buttons.draw(self.screen)
         self.render_currency()
         self.mob_mark.update_and_render(self.screen)
-        # Если уровень пройден, переходим на новый:
-        if not any(self.mobs.values()) and self.level_completed:
-            self.level += 1
-            self.start_next_level()
+
+    def close_add_tower_menu(self):
+        for add_tower_menu in self.add_tower_menus:
+            add_tower_menu.kill()
 
     def save_progress(self):
-        self.reset_progress()
         con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
         cur = con.cursor()
         # Сохранение основной информации:
+        cur.execute('''DELETE FROM slots
+                       WHERE id = ?''', (self.save_slot,))
         cur.execute('INSERT INTO slots VALUES (?, ?, ?, ?, ?)',
                     (self.save_slot, self.mt.health, self.level, self.time_in_game, self.currency))
         # Сохранение информации о мобах:
+        cur.execute('''DELETE FROM mobs
+                       WHERE slot_id = ?''', (self.save_slot,))
         mobs_data = []
         for mob in self.moblist:
             if mob.state != 'death':
@@ -998,12 +936,16 @@ class Game:
             cur.execute('INSERT INTO mobs VALUES ' + ', '.join([str(mob_data) for mob_data in mobs_data]))
         self.moblist = [mob for mob in self.moblist if mob.state != 'death']
         # Сохранение информации о снарядах:
+        cur.execute('''DELETE FROM bullets
+                       WHERE slot_id = ?''', (self.save_slot,))
         bullets_data = []
         for bullet in self.bullets:
             bullets_data.append((self.save_slot, *bullet.get_state(), self.moblist.index(bullet.mob)))
         if bullets_data:
             cur.execute('INSERT INTO bullets VALUES ' + ', '.join([str(bullet_data) for bullet_data in bullets_data]))
         # Сохранение информации о башнях:
+        cur.execute('''DELETE FROM towers
+                       WHERE slot_id = ?''', (self.save_slot,))
         towers_data = []
         for tower in self.towers:
             towers_data.append((self.save_slot, *tower.get_state()))
@@ -1011,37 +953,6 @@ class Game:
             cur.execute('INSERT INTO towers VALUES ' + ', '.join([str(tower_data) for tower_data in towers_data]))
         con.commit()
         con.close()
-
-    def reset_progress(self):
-        try:
-            con = sqlite3.connect(os.path.join('data', 'save_slots_db.sqlite3'))
-            cur = con.cursor()
-            cur.execute('''DELETE FROM slots
-                           WHERE id = ?''', (self.save_slot,))
-            cur.execute('''DELETE FROM mobs
-                           WHERE slot_id = ?''', (self.save_slot,))
-            cur.execute('''DELETE FROM bullets
-                           WHERE slot_id = ?''', (self.save_slot,))
-            cur.execute('''DELETE FROM towers
-                           WHERE slot_id = ?''', (self.save_slot,))
-            con.commit()
-            con.close()
-        except AttributeError:  # Если не выбран текущий слот сохранения
-            return
-
-    def end_game(self, image='game_over.png'):
-        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
-        fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 2)
-        fade(self.screen, load_image(os.path.join('sprites', image)), 0.5)
-        self.level = 1
-        self.kill_all_mobs()
-        self.reset_progress()
-        self.begin()
-
-    def kill_all_mobs(self):
-        self.moblist.clear()
-        for mob in self.mobs.keys():
-            self.mobs[mob].empty()
 
     def quit(self):
         pygame.quit()
