@@ -106,7 +106,7 @@ def client_processing(conn, player, room):
 
 def load_ways():
     ways = []
-    path_to_roads = os.path.join('online_game_map', 'ways')
+    path_to_roads = os.path.join('maps', 'online_game_map', 'ways')
     for road in sorted(os.listdir(path_to_roads)):
         ways.append([])
         path_to_ways = os.path.join(path_to_roads, road)

@@ -44,7 +44,7 @@ def fade(screen, image, speed=1.):
 
 class Map:
     def __init__(self, index):
-        self.dir = f'map{index}'
+        self.dir = os.path.join('maps', f'map{index}')
         self.ways = self.load_ways()
         self.image = load_image(os.path.join(self.dir, 'image.png'))
         self.sprite = self.load_sprite()
@@ -131,7 +131,7 @@ class Mob(pygame.sprite.Sprite):
         self.velocity = self.info['velocity'] / FPS
         self.health = self.max_health = self.info['health']
         self.damage = self.info['damage']
-        self.cost = self.info['cost']
+        self.reward = self.info['reward']
         self.animation_speed = self.info[self.state]['animation_speed']
         self.animation_length = self.info[self.state]['animation_length']
         self.health_line_bias = tuple(self.info['health_line_bias'].values())
@@ -216,7 +216,7 @@ class Mob(pygame.sprite.Sprite):
 
     def kill(self):
         self.state = 'death'
-        Game.currency += self.cost
+        Game.currency += self.reward
         self.animation = self.animations['death']
         self.animation_index = 0.
         self.animation_speed = self.info['death']['animation_speed']
@@ -888,8 +888,7 @@ class Game:
         continue_button = Button((770, 300, 350, 90), 'continue.png', menu)
         x = 800 + self.background_fight_sound.get_volume() * 315
         music_slider = Button((x, 483, 20, 40), 'slider.png', menu)
-        x1 = 800 + self.background_fight_sound.get_volume() * 315
-        sounds_slider = Button((x1, 619, 20, 40), 'slider.png', menu)
+        sounds_slider = Button((1115, 619, 20, 40), 'slider.png', menu)
         exit_button = Button((770, 680, 350, 90), 'exit.png', menu)
         menu.draw(self.screen)
         changing_music_volume = False

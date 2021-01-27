@@ -22,7 +22,7 @@ def load_road_zones():
         PLAYER_1: [],
         PLAYER_2: []
     }
-    path_to_roads = os.path.join('online_game_map', 'ways')
+    path_to_roads = os.path.join('maps', 'online_game_map', 'ways')
     for road, rect1, rect2 in (('road1', (193, 404, 322, 372), (1420, 371, 326, 324)),
                                ('road2', (0, 0, 500, 547), (1420, 0, 500, 510)),
                                ('road3', (0, 621, 500, 459), (1420, 591, 543, 489))):
@@ -49,37 +49,6 @@ def remake_mob_icons(player):
     if player == PLAYER_1:
         for mob in MOB_ICONS.keys():
             MOB_ICONS[mob] = pygame.transform.flip(MOB_ICONS[mob], True, False)
-
-
-def draw_mob(player, mob_type, coords, state, animation_index, health, screen):
-    image = MOBS_DATA[mob_type]['animations'][state][animation_index]
-    if player == 1:
-        image = pygame.transform.flip(image, True, False)
-    screen.blit(image, coords)
-    # Отрисовка полоски ХП
-    health_line_bias_x = MOBS_DATA[mob_type]['health_line_bias']['x']
-    health_line_bias_y = MOBS_DATA[mob_type]['health_line_bias']['y']
-    if player == 1:
-        health_line_bias_x = MOBS_DATA[mob_type][state]['width'] - health_line_bias_x - 30
-    draw_health_indicator(
-        coords[0] + health_line_bias_x,
-        coords[1] - health_line_bias_y,
-        health,
-        MOBS_DATA[mob_type]['health'],
-        30,
-        5,
-        screen
-    )
-
-
-def draw_tower(tower_type, coords, animation_index, screen):
-    image = TOWERS_SPRITES[tower_type][animation_index]
-    screen.blit(image, coords)
-
-
-def draw_bullet(bullet_type, coords, angle, animation_index, screen):
-    image = pygame.transform.rotate(BULLETS_SPRITES[bullet_type][animation_index], math.degrees(angle))
-    screen.blit(image, coords)
 
 
 def draw_health_indicator(x, y, health, max_health, indicator_width, indicator_height, screen):
@@ -285,7 +254,7 @@ class Pause:
         return self.on_pause
 
 
-class Game:
+class OnlineGame:
     total_plants = 2
 
     def __init__(self, screen):
@@ -314,7 +283,7 @@ class Game:
     def load_plants(self):
         plants = pygame.sprite.Group()
         plant_image = load_image('sprites/plant.png')
-        with open(os.path.join('online_game_map', 'plants.csv'), 'r') as f:
+        with open(os.path.join('maps', 'online_game_map', 'plants.csv'), 'r') as f:
             for line in f.readlines():
                 x, y = tuple(map(lambda coord: float(coord) - 125, line.split()[0].split(';')))
                 player = int(line.split()[1])
@@ -387,6 +356,34 @@ class Game:
         draw_health_indicator(50, 405, self.main_towers_hp[PLAYER_1], 1000, 100, 10, self.screen)
         draw_health_indicator(1780, 415, self.main_towers_hp[PLAYER_2], 1000, 100, 10, self.screen)
 
+    def draw_mob(self, player, mob_type, coords, state, animation_index, health):
+        image = MOBS_DATA[mob_type]['animations'][state][animation_index]
+        if player == 1:
+            image = pygame.transform.flip(image, True, False)
+        self.screen.blit(image, coords)
+        # Отрисовка полоски ХП
+        health_line_bias_x = MOBS_DATA[mob_type]['health_line_bias']['x']
+        health_line_bias_y = MOBS_DATA[mob_type]['health_line_bias']['y']
+        if player == 1:
+            health_line_bias_x = MOBS_DATA[mob_type][state]['width'] - health_line_bias_x - 30
+        draw_health_indicator(
+            coords[0] + health_line_bias_x,
+            coords[1] - health_line_bias_y,
+            health,
+            MOBS_DATA[mob_type]['health'],
+            30,
+            5,
+            self.screen
+        )
+
+    def draw_tower(self, tower_type, coords, animation_index):
+        image = TOWERS_SPRITES[tower_type][animation_index]
+        self.screen.blit(image, coords)
+
+    def draw_bullet(self, bullet_type, coords, angle, animation_index):
+        image = pygame.transform.rotate(BULLETS_SPRITES[bullet_type][animation_index], math.degrees(angle))
+        self.screen.blit(image, coords)
+
     def update_and_render(self, user_action='ok'):
         # Получение данных:
         self.data_from_server = self.get_data_from_server(user_action)
@@ -396,7 +393,7 @@ class Game:
             self.main_towers_hp[PLAYER_2] = self.data_from_server[4]
             self.currency = self.data_from_server[5] if self.player_index == PLAYER_1 else self.data_from_server[6]
             # Если противник поставил башню, то нужно удалить соответствующий плент:
-            if len(self.data_from_server[1]) != Game.total_plants - len([plant for plant in self.plants if plant.free]):
+            if len(self.data_from_server[1]) != OnlineGame.total_plants - len([plant for plant in self.plants if plant.free]):
                 towers_positions = [tower_data[1] for tower_data in self.data_from_server[1]]
                 for plant in self.plants:
                     for x, y in towers_positions:
@@ -408,11 +405,11 @@ class Game:
             self.screen.blit(MULTIPLAYER_MAP_IMAGE, (0, 0))
             self.render_main_towers()
             for mob_data in self.data_from_server[0]:
-                draw_mob(*mob_data, self.screen)
+                self.draw_mob(*mob_data)
             for tower_data in self.data_from_server[1]:
-                draw_tower(*tower_data, self.screen)
+                self.draw_tower(*tower_data)
             for bullet_data in self.data_from_server[2]:
-                draw_bullet(*bullet_data, self.screen)
+                self.draw_bullet(*bullet_data)
             self.plants.draw(self.screen)
             self.add_tower_menus.draw(self.screen)
             for add_tower_menu in self.add_tower_menus:
@@ -431,7 +428,7 @@ class Game:
 
 def play_online(screen):
     try:
-        game = Game(screen)
+        game = OnlineGame(screen)
         running = True
         time = pygame.time.Clock()
         fps_font = pygame.font.SysFont("Arial", 18)

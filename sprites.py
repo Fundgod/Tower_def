@@ -89,6 +89,6 @@ CURRENCY_FONT = pygame.font.SysFont('Arial', 60)
 SMALL_FONT = pygame.font.SysFont('Arial', 25)
 BLACK_SCREEN = load_image(os.path.join('sprites', 'black_screen.png'))
 # Спрайты для мультиплеера:
-MULTIPLAYER_MAP_IMAGE = load_image(os.path.join('online_game_map', 'image.png'))
+MULTIPLAYER_MAP_IMAGE = load_image(os.path.join('maps', 'online_game_map', 'image.png'))
 MOB_ICONS = load_mob_icons()
 WAITING_PLAYERS_SCREEN = load_image(os.path.join('sprites', 'waiting_players_screen.png'))

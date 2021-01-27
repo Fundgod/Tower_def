@@ -24,5 +24,6 @@
   "velocity": 30,
   "health": 300,
   "damage": 100,
-  "cost": 200
+  "cost": 200,
+  "reward": 200
 }
