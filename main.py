@@ -484,14 +484,13 @@ class AddTowerMenu(pygame.sprite.Sprite):
     width = 400
     height = 180
 
-    def __init__(self, plant, moblist, currency, group_for_towers, group_for_bullets, group):
+    def __init__(self, plant, moblist, group_for_towers, group_for_bullets, group):
         super().__init__(group)
         self.coords = plant.rect.x, plant.rect.y
         self.plant = plant
         self.moblist = moblist
         self.group_for_towers = group_for_towers
         self.group_for_bullets = group_for_bullets
-        self.currency = currency
         self.image = ADD_TOWER_MENU_IMAGE
         self.width, self.height = AddTowerMenu.width, AddTowerMenu.height
         self.rect = pygame.Rect(self.coords[0] - 70,
@@ -520,13 +519,13 @@ class AddTowerMenu(pygame.sprite.Sprite):
 
     def check_click(self, click):
         if click.colliderect(self.bow_tower_button):
-            if self.currency >= BowTower.cost:
+            if Game.currency >= BowTower.cost:
                 self.spawn_tower(BowTower)
         elif click.colliderect(self.cannon_tower_button):
-            if self.currency >= CannonTower.cost:
+            if Game.currency >= CannonTower.cost:
                 self.spawn_tower(CannonTower)
         elif click.colliderect(self.crystal_tower_button):
-            if self.currency >= CrystalTower.cost:
+            if Game.currency >= CrystalTower.cost:
                 self.spawn_tower(CrystalTower)
 
     def spawn_tower(self, tower):
@@ -615,6 +614,7 @@ class Game:
 
     def reset(self):
         self.map = Map(self.level)
+        Game.currency = 100
         self.plants = self.load_plants()
         self.mt.health = MainTower.full_hp
         self.add_tower_menus.empty()
@@ -854,7 +854,7 @@ class Game:
             return
         for plant in self.plants:
             if click.colliderect(plant):
-                AddTowerMenu(plant, self.moblist, self.currency, self.towers, self.bullets, self.add_tower_menus)
+                AddTowerMenu(plant, self.moblist, self.towers, self.bullets, self.add_tower_menus)
                 return
         for mob in self.moblist:
             if click.colliderect(mob):
