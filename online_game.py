@@ -7,6 +7,12 @@ from time import sleep
 from threading import Thread
 
 
+def opponent(player):
+    if player == PLAYER_1:
+        return PLAYER_2
+    return PLAYER_1
+
+
 def load_mobs_data():
     data = {}
     animations = load_mob_animations()
@@ -38,7 +44,7 @@ def load_road_zones():
     return zones
 
 
-SERVER = '127.0.0.1'  # '109.226.242.226'  # '127.0.0.1'
+SERVER = '109.226.242.226'  # '127.0.0.1'
 PORT = 4444
 ADDRESS = (SERVER, PORT)
 MOBS_DATA = load_mobs_data()
@@ -189,9 +195,9 @@ class Button(pygame.sprite.Sprite):
 
 
 class Pause:
-    def __init__(self, screen, background_fight_sound):
+    def __init__(self, screen, game):
         self.screen = screen
-        self.game = background_fight_sound
+        self.game = game
         self.menu = pygame.sprite.Group()
         self.menu_table = pygame.sprite.Sprite(self.menu)
         self.menu_table.rect = pygame.Rect(660, 190, 600, 700)
@@ -417,6 +423,10 @@ class OnlineGame:
             self.render_currency()
             self.spawn_mob_menu.draw(self.screen)
             self.pause.render()
+            if self.main_towers_hp[self.player_index] <= 0:
+                raise Lose
+            elif self.main_towers_hp[opponent(self.player_index)] <= 0:
+                raise Win
         else:
             self.screen.blit(WAITING_PLAYERS_SCREEN, (0, 0))
             self.buttons.draw(self.screen)

@@ -768,7 +768,8 @@ class Game:
                             pygame.display.flip()
                         elif click.colliderect(multiplayer_button):
                             try:
-                                self.play_fight_music()
+                                Thread(target=start_or_stop_music, args=(background_menu_sound, True),
+                                       daemon=True).start()
                                 self.online_match()
                                 return
                             except ServerError:
@@ -1029,7 +1030,10 @@ class Game:
             return
 
     def end_game(self, image='game_over.png'):
-        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
+        try:
+            Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
+        except AttributeError:
+            pass
         fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 2)
         fade(self.screen, load_image(os.path.join('sprites', image)), 0.5)
         self.level = 1
