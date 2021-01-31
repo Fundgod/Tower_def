@@ -49,7 +49,7 @@ class Mob(pygame.sprite.Sprite):
         # В первом случае опциональные аргументы не передаются, а во втором передаются
         if x is None:
             # Если опциональные аргументы не переданы, то просто ставим моба в начало пути
-            self.coords = list(self.way[self.pos])
+            self.coords = list(self.way[0])
         else:
             # Иначе приводим моба в такое состояние, в котором он был перед сохранением игры
             self.coords = [x, y]
@@ -57,7 +57,7 @@ class Mob(pygame.sprite.Sprite):
             self.image = self.animation[int(self.animation_index)]
             try:
                 if self.steps_to_next_point > 0:
-                    next_point = self.way[self.pos + 1]
+                    next_point = self.way[self.pos]
                     d_x, d_y = next_point[0] - self.coords[0], next_point[1] - self.coords[1]
                     self.x_velocity = d_x / self.steps_to_next_point
                     self.y_velocity = d_y / self.steps_to_next_point
@@ -75,7 +75,8 @@ class Mob(pygame.sprite.Sprite):
         """Загружает параметры моба из json файла"""
         with open(os.path.join('mobs', type, 'info.json'), 'r', encoding='utf-8') as info_file:
             self.info = json.load(info_file)
-        self.width, self.height = self.info[self.state]['width'], self.info[self.state]['height']
+        self.width = self.info[self.state]['width']
+        self.height = self.info[self.state]['height']
         self.velocity = self.info['velocity'] / FPS
         self.health = self.max_health = self.info['health']
         self.damage = self.info['damage']
@@ -97,9 +98,10 @@ class Mob(pygame.sprite.Sprite):
                 if index > self.pos:
                     way_point_1 = self.way[index - 1]
                 else:
-                    way_point_1 = self.coords
+                    way_point_1 = self.coords.copy()
                 way_point_2 = self.way[index]
-                d_x, d_y = way_point_2[0] - way_point_1[0], way_point_2[1] - way_point_1[1]
+                d_x = way_point_2[0] - way_point_1[0]
+                d_y = way_point_2[1] - way_point_1[1]
                 return (way_point_1[0] + d_x / steps * delta_steps,
                         way_point_1[1] + d_y / steps * delta_steps)
             start_point = self.way[index]
@@ -130,14 +132,16 @@ class Mob(pygame.sprite.Sprite):
                     start_point = self.way[self.pos]
                     self.pos += 1
                     next_point = self.way[self.pos]
-                    d_x, d_y = next_point[0] - start_point[0], next_point[1] - start_point[1]
+                    d_x = next_point[0] - start_point[0]
+                    d_y = next_point[1] - start_point[1]
                     self.steps_to_next_point = math.hypot(d_x, d_y) // self.velocity
                     self.x_velocity = d_x / self.steps_to_next_point
                     self.y_velocity = d_y / self.steps_to_next_point
                 self.steps_to_next_point -= 1
                 self.coords[0] += self.x_velocity
                 self.coords[1] += self.y_velocity
-                self.rect.x, self.rect.y = self.coords[0] - self.width / 2, self.coords[1] - self.height / 2
+                self.rect.x = self.coords[0] - self.width / 2
+                self.rect.y = self.coords[1] - self.height / 2
             except IndexError:  # Значит, моб дошёл до конца пути
                 self.attack(self.target)
         elif self.state != 'death':
@@ -606,11 +610,12 @@ class Game:
         self.level_completed = False
 
     def set_tagged_mob(self, mob, click_coords):
-        mob.tagged = True
-        if self.tagged_mob is not None and self.tagged_mob != mob:
-            self.tagged_mob.tagged = False
-        self.tagged_mob = mob
-        self.mob_mark.place(*click_coords)
+        if mob.state != 'death':
+            mob.tagged = True
+            if self.tagged_mob is not None and self.tagged_mob != mob:
+                self.tagged_mob.tagged = False
+            self.tagged_mob = mob
+            self.mob_mark.place(*click_coords)
 
     def load_progress(self, save_slot_id):
         """Загружает игровой прогресс из базы данных"""
@@ -645,16 +650,17 @@ class Game:
             mobs_data = cur.execute('''SELECT * FROM mobs
                                        WHERE slot_id = ?''', (save_slot_id,)).fetchall()
             for mob_data in mobs_data:
-                mob = Mob(self.mobs[mob_data[1]], self.map.get_way(*mob_data[2:4]), *mob_data[1:], target=self.main_tower)
+                mob = Mob(self.mobs[mob_data[1]], self.map.get_way(*mob_data[2:4]), *mob_data[1:],
+                          target=self.main_tower)
                 self.moblist.append(mob)
             # Загрузка данных снарядов:
             bullets_data = cur.execute('''SELECT * FROM bullets
                                           WHERE slot_id = ?''', (save_slot_id,)).fetchall()
             for _, x, y, angle, end_x, end_y, bullet_type, velocity, damage, mob_index in bullets_data:
-                distance = math.hypot(end_x - x, end_y - y)
                 if bullet_type == 'sphere':
                     HomingBullet(self.bullets, (x, y), damage, bullet_type, self.moblist[mob_index], angle=angle)
                 else:
+                    distance = math.hypot(end_x - x, end_y - y)
                     Bullet(self.bullets, (x, y), damage, bullet_type, distance, self.moblist[mob_index],
                            end_coords=(end_x, end_y), velocity=velocity, angle=angle)
             con.close()
@@ -696,7 +702,9 @@ class Game:
         """Отрисовывает главное меню и обрабатывает действия пользователя в главном меню"""
         def wait_and_close_server_error(background):
             sleep(3)
-            self.screen.blit(background.subsurface((700, 330, 600, 100)), (700, 330))
+            if state == 'main_menu':
+                # Заслоняем сообщение об ошибке сервера:
+                self.screen.blit(background.subsurface((700, 330, 600, 100)), (700, 330))
 
         self.reset()
         # Фоновая музыка меню:
@@ -981,11 +989,12 @@ class Game:
         # Сохранение основной информации:
         cur.execute('INSERT INTO slots VALUES (?, ?, ?, ?, ?)',
                     (self.save_slot, self.main_tower.health, self.level, self.time_in_game, self.currency))
-        # Сохранение информации о мобах:
-        mobs_data = []
+        # Чистка моб листа:
         for mob in self.moblist:
             if mob.state == 'death':
                 self.moblist.remove(mob)
+        # Сохранение информации о мобах:
+        mobs_data = []
         for mob in self.moblist:
             mobs_data.append((self.save_slot, *mob.get_data()))
         if mobs_data:
