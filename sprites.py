@@ -5,6 +5,9 @@ import os
 from constants import *
 
 
+# В этом файле загружаются спрайты для игры
+
+
 def load_image(name, colorkey=None):
     if not name:
         print(f"Файл с изображением '{name}' не найден")
@@ -97,3 +100,4 @@ BLACK_SCREEN = load_image(os.path.join('sprites', 'black_screen.png'))
 MULTIPLAYER_MAP_IMAGE = load_image(os.path.join('maps', 'online_game_map', 'image.png'))
 MOB_ICONS = load_mob_icons()
 WAITING_PLAYERS_SCREEN = load_image(os.path.join('sprites', 'waiting_players_screen.png'))
+SERVER_ERROR = load_image(os.path.join('sprites', 'server_error.png'))

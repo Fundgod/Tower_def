@@ -466,9 +466,11 @@ class OnlineGame:
             self.buttons.draw(self.screen)
 
 
-def play_online(screen):
+def play_online(screen, background_music=None):
     try:
         game = OnlineGame(screen)
+        if background_music is not None:  # Если играла музыка главного меню, нужно её выключить
+            Thread(target=start_or_stop_music, args=(background_music, True), daemon=True).start()
         time = pygame.time.Clock()
         fps_font = pygame.font.SysFont("Arial", 18)
         user_action = 'ok'

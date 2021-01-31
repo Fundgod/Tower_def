@@ -704,7 +704,10 @@ class Game:
             sleep(3)
             if state == 'main_menu':
                 # Заслоняем сообщение об ошибке сервера:
-                self.screen.blit(background.subsurface((700, 330, 600, 100)), (700, 330))
+                try:
+                    self.screen.blit(background.subsurface((700, 330, 600, 100)), (700, 330))
+                except pygame.error:  # pygame даёт ошибку если игрок вышел из игры
+                    return
 
         self.reset()
         # Фоновая музыка меню:
@@ -751,14 +754,11 @@ class Game:
                         elif click.colliderect(multiplayer_button):
                             # Запускаем онлайн матч:
                             try:
-                                Thread(target=start_or_stop_music, args=(background_menu_sound, True),
-                                       daemon=True).start()
-                                self.online_match()
+                                self.online_match(background_menu_sound)
                                 return
                             except ServerError:
                                 # Показываем ошибку:
-                                server_error = load_image(os.path.join('sprites', 'server_error.png'))
-                                self.screen.blit(server_error, (700, 330))
+                                self.screen.blit(SERVER_ERROR, (700, 330))
                                 Thread(target=wait_and_close_server_error, args=[background]).start()
                         elif click.colliderect(exit_button):
                             self.quit()
@@ -799,8 +799,8 @@ class Game:
         else:
             self.end_game('win.png')
 
-    def online_match(self):
-        exit_state = play_online(self.screen)
+    def online_match(self, background_menu_sound):
+        exit_state = play_online(self.screen, background_menu_sound)
         if exit_state == 'exit':
             self.begin()
         else:
