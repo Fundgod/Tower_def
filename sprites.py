@@ -21,6 +21,7 @@ def load_image(name, colorkey=None):
 
 
 def load_animation(path_to_image, width, height):
+    """Разрезает картинку на кадры шириной width и высотой height"""
     image = load_image(os.path.join(path_to_image))
     x, y = image.get_size()
     frames = []
@@ -33,6 +34,7 @@ def load_animation(path_to_image, width, height):
 
 
 def load_towers_sprites():
+    """Загружает словарь анимаций всех башен"""
     towers_sprites = {}
     path = os.path.join('sprites', 'towers')
     for tower in os.listdir(path):
@@ -43,6 +45,7 @@ def load_towers_sprites():
 
 
 def load_mob_animations():
+    """Загружает словарь анимаций всех мобов"""
     animations = {}
     root = 'mobs'
     for mob in os.listdir(root):
@@ -58,6 +61,7 @@ def load_mob_animations():
 
 
 def load_mob_icons():
+    """Загружает словарь иконок мобов"""
     mob_icons = {}
     path = 'mobs'
     for mob in MOBS:
@@ -66,6 +70,7 @@ def load_mob_icons():
 
 
 def load_bullets_sprites():
+    """Загружает словарь анимаций всех снарядов"""
     bullets_sprites = {}
     path = os.path.join('sprites', 'bullets')
     for bullet, width, height in (('arrow', 25, 25), ('shell', 25, 25), ('sphere', 40, 25)):
@@ -81,12 +86,12 @@ BULLETS_SPRITES = load_bullets_sprites()
 MAINTOWER_IMAGE = pygame.transform.scale(load_image(os.path.join('sprites', 'main_tower.png')), (300, 300))
 ADD_TOWER_MENU_IMAGE = load_image(os.path.join('sprites', 'add_tower_menu.png'))
 TOWERS_SPRITES = load_towers_sprites()
-BOW_TOWER_IMAGE = load_image(os.path.join('sprites', 'towers', 'bow', '1.png'))
+PLANT_IMAGE = load_image('sprites/plant.png')
 COIN_ICON = load_image(os.path.join('sprites', 'coin.png'))
-SMALL_COIN_ICON = pygame.transform.scale(load_image(os.path.join('sprites', 'coin.png')), (20, 20))
+SMALL_COIN_ICON = pygame.transform.scale(COIN_ICON, (20, 20))
 MOB_MARK_SPRITE = load_image(os.path.join('sprites', 'mark.png'))
 CURRENCY_FONT = pygame.font.SysFont('Arial', 60)
-SMALL_FONT = pygame.font.SysFont('Arial', 25)
+MOB_COST_FONT = pygame.font.SysFont('Arial', 25)
 BLACK_SCREEN = load_image(os.path.join('sprites', 'black_screen.png'))
 # Спрайты для мультиплеера:
 MULTIPLAYER_MAP_IMAGE = load_image(os.path.join('maps', 'online_game_map', 'image.png'))

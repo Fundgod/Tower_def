@@ -12,9 +12,9 @@ CRYSTAL_GOLEM = 'crystal_golem'
 MOBS = (MASK, SKILLET, STONE_GOLEM, BOAR_WARRIOR, HORNY_DOG, CRYSTAL_GOLEM)
 CACHE_VELOCITY = 1 / 30
 MAINTOWERS_POSITIONS = {
-    1: (20, 670),
-    2: (-10, 340),
-    3: (-10, 353)
+    1: (20, 670),  # Для уровня 1
+    2: (-10, 340),  # Для уровня 2
+    3: (-10, 353)  # Для уровня 3
 }
 SPAWN_DATA = {
     1: (
