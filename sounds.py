@@ -6,9 +6,9 @@ import os
 
 
 sounds_dir = 'sounds'
-splash_screen_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'Snake_load_sound.wav'))
-background_menu_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'Background_sound.wav'))
-background_fight_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'Background_fight_sound.wav'))
+splash_screen_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'snake_load_sound.wav'))
+background_menu_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'background_sound.wav'))
+background_fight_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'background_fight_sound.wav'))
 bow_shot_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'bow_shot.wav'))
 cannon_shot_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'cannon_shot.wav'))
 crystal_shot_sound = pygame.mixer.Sound(os.path.join(sounds_dir, 'crystal_shot.wav'))
