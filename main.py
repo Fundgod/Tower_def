@@ -7,6 +7,7 @@ from online_game import play_online
 from exceptions import ServerError
 from utils import load_ways, calculate_distance_between_points
 from pygame_functions import *
+from sounds import *
 
 
 class Map:
@@ -143,7 +144,7 @@ class Mob(pygame.sprite.Sprite):
                 self.rect.x = self.coords[0] - self.width / 2
                 self.rect.y = self.coords[1] - self.height / 2
             except IndexError:  # Значит, моб дошёл до конца пути
-                self.attack(self.target)
+                self.attack(self.target)  # атаковать главную башню
         elif self.state != 'death':
             self.kill()
         elif round(self.animation_index) == self.animation_length:
@@ -159,6 +160,7 @@ class Mob(pygame.sprite.Sprite):
         attack_animation = self.animations['attack']
         if int(self.animation_index) == self.animation_length - 1:
             target.hit(self.damage)
+            mob_hit_sound.play()
         if self.state != 'attack':
             self.state = 'attack'
             self.animation = attack_animation
@@ -212,6 +214,7 @@ class BowTower(pygame.sprite.Sprite):
                     distance = calculate_distance_between_points(*self.coords, *mob.coords)
                     if distance <= self.shooting_range:
                         Bullet(self.bullets_group, self.coords, self.damage, 'arrow', distance, mob)
+                        bow_shot_sound.play()
                         self.reloading = self.time_to_reload
                         return
         else:
@@ -256,6 +259,7 @@ class CannonTower(pygame.sprite.Sprite):
                     if distance <= self.shooting_range:
                         bullet = Bullet(self.bullets_group, self.coords, self.damage, 'shell', distance, mob,
                                         velocity=20)
+                        cannon_shot_sound.play()
                         # Пушка меняет спрайт в зависимости от того под каким углом она выстрелила
                         self.animation_index = round(bullet.angle / (math.pi / 8)) % self.animation_length
                         self.image = TOWERS_SPRITES['cannon'][self.animation_index]
@@ -302,6 +306,7 @@ class CrystalTower(pygame.sprite.Sprite):
                     distance = calculate_distance_between_points(*self.coords, *mob.coords)
                     if distance <= self.shooting_range:
                         HomingBullet(self.bullets_group, self.coords, self.damage, 'sphere', mob)
+                        crystal_shot_sound.play()
                         self.reloading = self.time_to_reload
                         return
         else:
@@ -347,6 +352,7 @@ class MainTower(pygame.sprite.Sprite):
                     if distance <= self.shooting_range and mob.state != 'death':
                         coords = (self.coords[0] + 135, self.coords[1] + 70)
                         Bullet(self.bullets_group, coords, self.damage, 'arrow', distance, mob)
+                        bow_shot_sound.play()
                         self.reloading = self.time_to_reload
                         return
             else:
@@ -681,8 +687,7 @@ class Game:
         """Проигрывает игровую заставку"""
         frame_index = 1
         time = pygame.time.Clock()
-        load_sound = pygame.mixer.Sound(os.path.join('sounds', 'Snake_load_sound.wav'))
-        load_sound.play()
+        splash_screen_sound.play()
 
         while frame_index < 280:
             time.tick(FPS)
@@ -693,7 +698,7 @@ class Game:
             # При какой-либо активности игрока заставка прекращается:
             for event in pygame.event.get():
                 if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
-                    load_sound.stop()
+                    splash_screen_sound.stop()
                     return
 
         fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')))
@@ -711,7 +716,6 @@ class Game:
 
         self.reset()
         # Фоновая музыка меню:
-        background_menu_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_sound.wav'))
         background_menu_sound.play()
         # Инициализация фоновой картинки и кнопок:
         background = load_image(os.path.join('sprites', 'background_image.png'))
@@ -778,8 +782,7 @@ class Game:
 
     def start_campaign(self, save_slot):
         # Мелодия боя:
-        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
-        Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
+        Thread(target=start_or_stop_music, args=(background_fight_sound,), daemon=True).start()
 
         self.save_slot = save_slot
         self.load_progress(save_slot)
@@ -880,9 +883,10 @@ class Game:
         menu_table.rect = pygame.Rect(660, 190, 600, 700)
         menu_table.image = load_image(os.path.join('sprites', 'pause_menu.png'))
         continue_button = Button((770, 300, 350, 90), 'continue.png', menu)
-        x = 800 + self.background_fight_sound.get_volume() * 315  # Позиция слайдера-регулировщика громкости музыки
+        x = 800 + background_fight_sound.get_volume() * 315  # Позиция слайдера-регулировщика громкости музыки
         music_slider = Button((x, 483, 20, 40), 'slider.png', menu)
-        sounds_slider = Button((1115, 619, 20, 40), 'slider.png', menu)
+        x = 800 + bow_shot_sound.get_volume() * 315  # Позиция слайдера-регулировщика громкости звуков
+        sounds_slider = Button((x, 619, 20, 40), 'slider.png', menu)
         exit_button = Button((770, 680, 350, 90), 'exit.png', menu)
         menu.draw(self.screen)
         changing_music_volume = False  # изменяет ли игрок громкость музыки в данный момент
@@ -905,7 +909,7 @@ class Game:
                     elif click.colliderect(exit_button):
                         self.save_progress()
                         self.playing = False
-                        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True),
+                        Thread(target=start_or_stop_music, args=(background_fight_sound, True),
                                daemon=True).start()
                         self.begin()
                         return
@@ -921,9 +925,10 @@ class Game:
                     volume = (next_pos - 799) / 315
                     if changing_music_volume:
                         music_slider.rect.x = next_pos
-                        self.background_fight_sound.set_volume(volume)
+                        background_fight_sound.set_volume(volume)
                     elif changing_sounds_volume:
                         sounds_slider.rect.x = next_pos
+                        change_sounds_volume(volume)
                     menu.draw(self.screen)  # перерисовываем меню, чтобы было видно что слайдер передвинулся
                 elif event.type == pygame.MOUSEBUTTONUP:
                     changing_music_volume = False
@@ -935,7 +940,7 @@ class Game:
                     elif event.key == pygame.K_END:
                         self.save_progress()
                         self.playing = False
-                        Thread(target=start_or_stop_music, args=(self.background_fight_sound, True),
+                        Thread(target=start_or_stop_music, args=(background_fight_sound, True),
                                daemon=True).start()
                         self.begin()
                 pygame.display.flip()
@@ -1035,7 +1040,7 @@ class Game:
     def end_game(self, image='game_over.png'):
         """Плавно выводит на экран каритнку с какой-нибудь надписью, затем возвращает в главное меню"""
         try:
-            Thread(target=start_or_stop_music, args=(self.background_fight_sound, True), daemon=True).start()
+            Thread(target=start_or_stop_music, args=(background_fight_sound, True), daemon=True).start()
         except AttributeError:
             pass
         fade(self.screen, load_image(os.path.join('sprites', 'background_image.png')), 2)

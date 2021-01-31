@@ -114,23 +114,24 @@ def let_mobs_fight(mob1, mob2):
     x = (mob1.coords[0] + mob2.coords[0]) / 2
     y = (mob1.coords[1] + mob2.coords[1]) / 2
     if mob1.player == PLAYER_1:
-        mob1.coords = [x - 30, y]
-        mob2.coords = [x + 30, y]
+        mob1.set_coords(x - 30, y)
+        mob2.set_coords(x + 30, y)
     else:
-        mob1.coords = [x + 30, y]
-        mob2.coords = [x - 30, y]
+        mob1.set_coords(x + 30, y)
+        mob2.set_coords(x - 30, y)
     # Заставляем мобов драться:
     mob1.attack(mob2)
     mob2.attack(mob1)
 
 
 class Mob:
-    def __init__(self, player, type, road_index, coords, opponent_main_tower):
+    def __init__(self, player, type, road_index, coords, opponent_main_tower, game_sounds_query):
         self.player = player
         self.type = type
         self.road = road_index
         self.coords = list(coords)
         self.opponent_main_tower = opponent_main_tower
+        self.game_sounds_query = game_sounds_query  # очередь звуков, отсылаемых клиентам
         self.way = self.define_way()
         self.pos = 0  # индекс проходимой точки в маршруте моба
         self.load_info(self.type)
@@ -138,6 +139,10 @@ class Mob:
         self.steps_to_next_point = 0  # сколько шагов осталось пройти до следующей точки маршрута
         self.tagged = False
         self.target = None
+        self.pre_fight_coords = None
+        # При поединке мобы встают друг напротив друга, так что их координаты меняются.
+        # Во время сражения с другим мобом в sef.pre_fight_coords будут сохраняться
+        # координаты моба перед боем, чтобы после окончания схватки вернуть его на место
 
     def define_way(self):
         # Случайно определяется путь моба:
@@ -169,6 +174,13 @@ class Mob:
         self.animation_speed = self.info[state]['animation_speed']
         self.animation_length = self.info[state]['animation_length']
         self.animation_index = 0.
+
+    def set_coords(self, x, y):
+        """Вызывается перед схваткой моба с другим мобом и нужна чтобы поставить их друг перед другом"""
+        # Сохраним координаты, которые были перед схваткой, чтобы потом вернуть моба на место:
+        self.pre_fight_coords = self.coords.copy()
+        # Установим новые координаты:
+        self.coords = [x, y]
 
     def get_current_coords(self):
         """Возвращает координаты левого верхнего угла моба для отправки клиенту"""
@@ -227,10 +239,13 @@ class Mob:
             # Если проигрывается последний кадр анимации атаки, то цели наносится урон:
             if int(self.animation_index) == self.animation_length - 1:
                 self.target.hit(self.damage)
+                self.game_sounds_query.append('mob_hit')
                 # Если цель умерла, то двигаемся дальше:
                 if self.target.health <= 0:
                     self.target = None
                     self.set_state('move')
+                    if self.pre_fight_coords is not None:
+                        self.coords = self.pre_fight_coords  # ставим моба туда где он был перед боем
         elif self.state == 'death' and round(self.animation_index) == self.animation_length:
             self.state = 'killed'
 
@@ -256,11 +271,12 @@ class BowTower:
     x_bias = 125
     y_bias = -25
 
-    def __init__(self, player, coords, mobs, bullets):
+    def __init__(self, player, coords, mobs, bullets, game_sounds_query):
         self.player = player
         self.coords = (coords[0] + self.x_bias, coords[1] + self.y_bias)
         self.mobs = mobs
         self.bullets = bullets
+        self.game_sounds_query = game_sounds_query  # очередь звуков, отсылаемых клиентам
         self.reloading = 0  # сколько времени осталось до выстрела(сек/60)
 
     def get_coords(self):
@@ -274,6 +290,7 @@ class BowTower:
                     distance = calculate_distance_between_points(*self.coords, *mob.coords)
                     if distance <= self.shooting_range:
                         self.bullets.append(Bullet(self.coords, self.damage, 'arrow', 600, mob, distance))
+                        self.game_sounds_query.append('bow_shot')
                         self.reloading = self.time_to_reload
                         return
         else:
@@ -294,11 +311,12 @@ class CannonTower:
     # bias - смещение точки, из которой вылетает снаряд, от левого верхнего угла плента, на котором спавнится башня
     animation_length = 16
 
-    def __init__(self, player, coords, mobs, bullets):
+    def __init__(self, player, coords, mobs, bullets, game_sounds_query):
         self.player = player
         self.coords = (coords[0] + self.x_bias, coords[1] + self.y_bias)
         self.mobs = mobs
         self.bullets = bullets
+        self.game_sounds_query = game_sounds_query  # очередь звуков, отсылаемых клиентам
         self.reloading = 0  # сколько времени осталось до выстрела(сек/60)
         self.animation_index = 0
 
@@ -314,6 +332,7 @@ class CannonTower:
                     if distance <= self.shooting_range:
                         bullet = Bullet(self.coords, self.damage, 'shell', 1200, mob, distance)
                         self.bullets.append(bullet)
+                        self.game_sounds_query.append('cannon_shot')
                         self.animation_index = round(bullet.angle / (math.pi / 8)) % self.animation_length
                         self.reloading = self.time_to_reload
                         return
@@ -335,11 +354,12 @@ class CrystalTower:
     # bias - смещение точки, из которой вылетает снаряд, от левого верхнего угла плента, на котором спавнится башня
     animation_length = 27
 
-    def __init__(self, player, coords, mobs, bullets):
+    def __init__(self, player, coords, mobs, bullets, game_sounds_query):
         self.player = player
         self.coords = (coords[0] + self.x_bias, coords[1] + self.y_bias)
         self.mobs = mobs
         self.bullets = bullets
+        self.game_sounds_query = game_sounds_query  # очередь звуков, отсылаемых клиентам
         self.reloading = 0  # сколько времени осталось до выстрела(сек/60)
         self.animation_index = 0
 
@@ -354,6 +374,7 @@ class CrystalTower:
                     distance = calculate_distance_between_points(*self.coords, *mob.coords)
                     if distance <= self.shooting_range:
                         self.bullets.append(HomingBullet(self.coords, self.damage, 'sphere', 300, mob))
+                        self.game_sounds_query.append('crystal_shot')
                         self.reloading = self.time_to_reload
                         return
         else:
@@ -370,12 +391,12 @@ class MainTower(BowTower):
     full_hp = 1000
     time_to_reload = 60
 
-    def __init__(self, player, mobs, bullets):
+    def __init__(self, player, mobs, bullets, game_sounds_query):
         if player == PLAYER_1:
             coords = (98, 462)
         else:
             coords = (1828, 470)
-        super().__init__(player, coords, mobs, bullets)
+        super().__init__(player, coords, mobs, bullets, game_sounds_query)
 
     def hit(self, damage):
         self.health -= damage
@@ -455,18 +476,21 @@ class HomingBullet(BaseBullet):
 
 class OnlineGame:
     def __init__(self):
+        self.sounds_query = []
+        # Очередь звуков, которые будут высылаться игрокам.
+        # Другие классы будут добавлять туда звуки выстрелов или ударов
         self.mobs = {
             PLAYER_1: [],
             PLAYER_2: []
         }
         self.bullets = []
         self.main_towers = {
-            PLAYER_1: MainTower(PLAYER_1, self.mobs, self.bullets),
-            PLAYER_2: MainTower(PLAYER_2, self.mobs, self.bullets)
+            PLAYER_1: MainTower(PLAYER_1, self.mobs, self.bullets, self.sounds_query),
+            PLAYER_2: MainTower(PLAYER_2, self.mobs, self.bullets, self.sounds_query)
         }
         self.players_cache = {
-            PLAYER_1: 1000,
-            PLAYER_2: 1000
+            PLAYER_1: 100,
+            PLAYER_2: 100
         }
         self.towers = {
             PLAYER_1: [],
@@ -479,7 +503,7 @@ class OnlineGame:
         while True:
             start_time = time.time()
             self.update()
-            sleep_time = 0.9 * TICK - (time.time() - start_time)
+            sleep_time = 0.8 * TICK - (time.time() - start_time)
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
@@ -533,7 +557,10 @@ class OnlineGame:
         for bullet in self.bullets:
             bullets_data.append(bullet.get_data())
 
-        self.data_to_send = pickle.dumps((tuple(mobs_data), tuple(towers_data), tuple(bullets_data),
+        sounds_data = tuple(self.sounds_query)
+        self.sounds_query.clear()
+
+        self.data_to_send = pickle.dumps((tuple(mobs_data), tuple(towers_data), tuple(bullets_data), sounds_data,
                                           self.main_towers[1].health, self.main_towers[2].health,
                                           int(self.players_cache[PLAYER_1]), int(self.players_cache[PLAYER_2])))
 
@@ -545,7 +572,7 @@ class OnlineGame:
             mob_type = data[0]
             road_index = int(data[1])
             coords = tuple(map(int, data[2].split(';')))
-            mob = Mob(player, mob_type, road_index, coords, self.main_towers[opponent(player)])
+            mob = Mob(player, mob_type, road_index, coords, self.main_towers[opponent(player)], self.sounds_query)
             if self.players_cache[player] >= mob.cost:
                 if (player == PLAYER_1 and coords[0] < WIDTH / 4) or (player == PLAYER_2 and coords[0] > WIDTH / 4 * 3):
                     self.mobs[player].append(mob)
@@ -558,11 +585,11 @@ class OnlineGame:
             for i in range(len(towers)):
                 if calculate_distance_between_points(*coords, *towers[i].get_coords()) <= 142:
                     if towers[i].cost < tower.cost:
-                        towers[i] = tower(player, coords, self.mobs, self.bullets)
+                        towers[i] = tower(player, coords, self.mobs, self.bullets, self.sounds_query)
                     else:
                         break
             else:
-                towers.append(tower(player, coords, self.mobs, self.bullets))
+                towers.append(tower(player, coords, self.mobs, self.bullets, self.sounds_query))
             self.players_cache[player] -= tower.cost
 
 

@@ -6,6 +6,7 @@ from exceptions import *
 from threading import Thread
 from utils import opponent
 from pygame_functions import *
+from sounds import *
 
 
 def load_mobs_data():
@@ -255,9 +256,10 @@ class Pause:
             volume = (next_pos - 799) / 315
             if self.changing_music_volume:
                 self.music_slider.rect.x = next_pos
-                self.game.background_fight_sound.set_volume(volume)
+                background_fight_sound.set_volume(volume)
             else:
                 self.sounds_slider.rect.x = next_pos
+                change_sounds_volume(volume)
             self.menu.draw(self.screen)  # Если бегунок был передвинут, нужно перерисовать экран
 
     def check_click_up(self):
@@ -303,8 +305,7 @@ class OnlineGame:
         }
         self.currency = 100
         self.spawn_mob_menu = SpawnMobMenu(self.player_index)
-        self.background_fight_sound = pygame.mixer.Sound(os.path.join('sounds', 'Background_fight_sound.wav'))
-        Thread(target=start_or_stop_music, args=(self.background_fight_sound,), daemon=True).start()
+        Thread(target=start_or_stop_music, args=(background_fight_sound,), daemon=True).start()
         self.pause = Pause(self.screen, self)
         self.buttons = pygame.sprite.Group()
         self.back_to_menu_button = Button((20, 20, 270, 100), 'back.png', self.buttons)
@@ -424,12 +425,17 @@ class OnlineGame:
     def update_and_render(self, user_action='ok'):
         # Получение данных:
         self.data_from_server = self.get_data_from_server(user_action)
-        mobs_data, towers_data, bullets_data = self.data_from_server[:3]
         if self.data_from_server != 'Waiting for players':
+            # Распаковка данных:
+            mobs_data, towers_data, bullets_data, sounds_data = self.data_from_server[:4]
+            p1_main_tower_health = self.data_from_server[4]
+            p2_main_tower_health = self.data_from_server[5]
+            p1_cache = self.data_from_server[6]
+            p2_cache = self.data_from_server[7]
             # Установка полученных значений:
-            self.main_towers_hp[PLAYER_1] = self.data_from_server[3]
-            self.main_towers_hp[PLAYER_2] = self.data_from_server[4]
-            self.currency = self.data_from_server[5] if self.player_index == PLAYER_1 else self.data_from_server[6]
+            self.main_towers_hp[PLAYER_1] = p1_main_tower_health
+            self.main_towers_hp[PLAYER_2] = p2_main_tower_health
+            self.currency = p1_cache if self.player_index == PLAYER_1 else p2_cache
             # Если противник поставил башню, то нужно удалить соответствующий плент:
             free_plants = [plant for plant in self.plants if plant.free]
             if len(towers_data) != self.total_plants - len(free_plants):
@@ -456,6 +462,8 @@ class OnlineGame:
             self.render_currency()
             self.spawn_mob_menu.draw(self.screen)
             self.pause.render()
+            for sound in sounds_data:
+                SOUNDS[sound].play()
             # Проверка на выигрыш/проигрыш:
             if self.main_towers_hp[self.player_index] <= 0:
                 raise Lose

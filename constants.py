@@ -10,7 +10,7 @@ BOAR_WARRIOR = 'boar_warrior'
 HORNY_DOG = 'horny_dog'
 CRYSTAL_GOLEM = 'crystal_golem'
 MOBS = (MASK, SKILLET, STONE_GOLEM, BOAR_WARRIOR, HORNY_DOG, CRYSTAL_GOLEM)
-CACHE_VELOCITY = 1 / 30
+CACHE_VELOCITY = 1 / 10
 MAINTOWERS_POSITIONS = {
     1: (20, 670),  # Для первого уровня
     2: (-10, 340),  # Для второго уровня
